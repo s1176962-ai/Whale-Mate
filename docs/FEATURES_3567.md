@@ -10,10 +10,10 @@
 确认框明确说明：练习尚未完成，不计入成绩历史；已经提交且答错的题目保留在错题本用于复习。
 
 ## 7 Windows 启动
-双击项目根目录 start.bat。脚本定位自身目录，优先使用 py -3，否则使用 python，启动 launcher.py 检查 Python 3.10+、Tk 和题库目录；失败显示错误并暂停。首次使用需安装带 Tk 的 Python 并勾选 Add Python to PATH。PDF 功能需执行 python -m pip install -r requirements.txt。脚本不自动安装 Python 或修改系统配置。
+双击项目根目录 start_windows.bat。脚本定位自身目录，优先使用 py -3，否则使用 python，启动 launcher.py 检查 Python 3.10+、Tk、题库目录，并自动补齐 requirements.txt 中缺失的可选依赖；失败显示错误并暂停。首次使用需安装带 Tk 的 Python 并勾选 Add Python to PATH。PDF 所需 reportlab 由启动器在缺失时自动安装，离线或失败时仅停用 PDF 导出并提示手动命令。脚本不自动安装 Python 或 Tcl/Tk；缺少 Tk 或无图形桌面时按平台给出修复指引。
 
 ## 修改文件
-services.py（超时事务），gui.py（倒计时、导出入口、退出文案），exports.py（CSV/PDF），locales/en.json（中英文），launcher.py/start.bat（启动与自检），requirements.txt（PDF 依赖）。现有 tests、账户及配图题库不修改。
+services.py（超时事务），gui.py（倒计时、导出入口、退出文案），exports.py（CSV/PDF），locales/en.json（中英文），launcher.py/start_windows.bat（启动与自检），requirements.txt（PDF 依赖）。现有 tests、账户及配图题库不修改。
 
 回归中发现并修复登录后台线程触发 Tk 对象回收的问题：启动后台验证前在界面线程回收已脱离的控件。原有 54 项测试通过。PDF 依赖已安装；导出已通过生成检查，尚未逐页人工视觉验收。
 

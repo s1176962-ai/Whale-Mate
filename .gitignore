@@ -17,3 +17,11 @@ data/ai_settings.json
 .tmp-*
 
 data/display.json
+
+# PyInstaller build output (do not ship local data)
+build/
+dist/
+WhaleMate_data/
+
+# WorkBuddy workspace data (local agent memory, not shipped)
+.workbuddy/

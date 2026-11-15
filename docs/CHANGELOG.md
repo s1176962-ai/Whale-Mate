@@ -1,5 +1,35 @@
 # 变更记录
 
+## Portable one-file build · 2026-11-16
+
+- Added `WhaleMate.spec` and `build_exe.bat`: a windowed single-file Windows exe (~38 MB) bundling Python 3.13, Tcl/Tk, ReportLab, question banks and artwork.
+- Frozen builds use a writable `WhaleMate_data/` root beside the exe (falling back to `%LOCALAPPDATA%\WhaleMate`), seeded with read-only resources on first launch, so accounts and progress survive restarts.
+- Only distributable resources are bundled; local users.json, profiles and progress are excluded.
+- Added `--check` and `--smoke` self-tests, frozen-aware pip skipping, and console-free error reporting.
+- Verified in a clean temporary directory: Tk 8.6 window, real PDF generation, full Application construction, 3 question banks and 69 images.
+- Renamed the Windows launcher `start.bat` to `start_windows.bat`; current docs use the new name (archived snapshots keep the original).
+
+## Windows 单文件免安装版 · 2026-11-16
+
+- 新增 `WhaleMate.spec` 与 `build_exe.bat`：产出约 38 MB 的无控制台单文件 exe，内含 Python 3.13、Tcl/Tk、ReportLab、题库与图片。
+- 打包版在 exe 旁使用可写的 `WhaleMate_data/` 作为项目根目录（只读位置回退 `%LOCALAPPDATA%\WhaleMate`），首次启动同步只读资源，账号与进度不会因重启丢失。
+- 只打包可分发的只读资源，本地 users.json、profiles 与进度文件不进入交付包。
+- 新增 `--check` / `--smoke` 自检（结果写入 `runtime_check.txt`），打包版跳过 pip 自检，无控制台时以弹窗与日志记录启动错误。
+- 在独立临时目录验收通过：Tk 8.6 可建窗、PDF 可生成、完整界面可构造、3 份题库与 69 张图片齐全。
+- Windows 启动脚本由 `start.bat` 更名为 `start_windows.bat`，当前文档引用已同步（归档快照保留历史名称）。
+
+## Launcher dependency bootstrap · 2026-11-15
+
+- `launcher.py` checks requirements.txt on startup and installs missing optional packages with the running interpreter's pip; failures, offline machines and timeouts never block the standard-library core.
+- Missing Tcl/Tk and headless-display errors now print platform-specific repair steps instead of the generic "install Python" hint; `start_windows.bat` and `start_mac.command` carry the same guidance.
+- Added 13 launcher unit tests covering requirement parsing, install, failure, timeout and per-platform messages without network or display access.
+
+## 启动器依赖自检 · 2026-11-15
+
+- 启动时检查 `requirements.txt`，缺失的可选依赖由当前解释器的 pip 自动安装；失败、离线或超时不阻断核心练习。
+- 缺少 Tcl/Tk 或无图形桌面时改为按平台输出修复指引，`start_windows.bat` 与 `start_mac.command` 的兜底文案同步更新。
+- 新增 13 项启动器单元测试，覆盖依赖解析、安装、失败、超时及各平台提示，不访问网络、不打开窗口。
+
 ## English-first documentation and Unicode punctuation · 2026-11-13
 
 - README, the authoritative specification and the SRS mapping guide now have matched English-first and Chinese sections, with current permissions, companion/battle behaviour, exports and limitations consolidated.
@@ -131,7 +161,7 @@
 
 ## v2.4 布局与高 DPI 显示修复 · 2026-11-11
 
-- 两个启动入口（`launcher.py`、`gui.main()`）新增 `maximize_startup()`，Windows 用 `root.state("zoomed")` 默认最大化；`start.bat`、`main.py`、`python -m learning_platform` 全部继承。
+- 两个启动入口（`launcher.py`、`gui.main()`）新增 `maximize_startup()`，Windows 用 `root.state("zoomed")` 默认最大化；`start_windows.bat`、`main.py`、`python -m learning_platform` 全部继承。
 - 滚动画布的 body 窗口改为按视口高度拉伸，首页四卡在最大化窗口下铺满页面，消除下方大片空白；首页卡片内距统一为 `T.SPACE_5`(24)，内部间距全部经 `T.px()` 缩放。
 - 修复 `_strip_focus()` 回归：clam 主题把 `Radiobutton.label` / `Checkbutton.label` 嵌在 `.focus` 节点内，旧实现删整节点导致设置页单选项只剩圆点；现在提升子节点再删焦点框。
 - 移除全项目写死的 `wraplength` 常量，改为 `<Configure>` 事件按控件真实宽度自适应（`label()`、设置页 `fit()`、配置页列 helper），修复高 DPI 下说明文字挤成窄列、登录页工具栏被裁成 `gh n`、首页空状态文案被截尾。

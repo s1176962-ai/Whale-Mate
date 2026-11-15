@@ -96,7 +96,7 @@ v2_4_layout_fixes:
   startup: >
     launcher.py and gui.main() call maximize_startup(root) after deiconify; Windows
     uses root.state("zoomed"), X11 falls back to -zoomed / a screen-filling geometry.
-    All three entry points (start.bat, main.py, python -m learning_platform) inherit it.
+    All three entry points (start_windows.bat, main.py, python -m learning_platform) inherit it.
   viewport_growth: >
     The scroll-canvas body window is stretched to the full canvas height, so the
     home dashboard's two grid rows expand with the viewport instead of leaving a

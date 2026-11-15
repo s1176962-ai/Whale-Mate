@@ -10,7 +10,7 @@ Updated: 2026-11-13. English is presented first; an equivalent Chinese guide fol
 
 ### 1. Install and run
 
-Use Python 3.10+ with Tcl/Tk. On Windows, double-click `start.bat` or run:
+Use Python 3.10+ with Tcl/Tk. On Windows, double-click `start_windows.bat` or run:
 
 ```powershell
 cd D:\develop\workplace\INT6181GroupAssessmentV2
@@ -18,7 +18,13 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-`python -m learning_platform` is another entry point. `python -m tkinter` checks Tk availability. The launcher checks the Python version, Tk and question directory; it does not install Python. Linux needs a graphical desktop and may require `python3-tk`. Core practice uses the standard library; ReportLab is required for PDF exports. Restart the application after changing code.
+`python -m learning_platform` is another entry point. `python -m tkinter` checks Tk availability. The launcher verifies the Python version, Tk and the question directory, and on first run installs the optional packages from `requirements.txt` (ReportLab, needed only for PDF exports) when they are missing. A failed or offline install disables PDF export only; the core app still starts. The launcher never installs Python or Tcl/Tk: if Tk is missing it prints platform-specific repair steps (Windows installer `tcl/tk and IDLE`, Linux `python3-tk`, macOS python.org build). Linux also needs a graphical desktop. Restart the application after changing code.
+
+### 1.1 Portable Windows build
+
+Double-click `build_exe.bat` to rebuild the single-file app; the result is `dist/WhaleMate.exe` (~38 MB, Python 3.13 + Tcl/Tk + ReportLab included). Copy only that exe to the target machine — Python is not needed. On first launch it creates `WhaleMate_data/` beside itself, seeds it with the question banks and artwork, and keeps accounts, progress and imported images there. Keep and back up that folder; deleting it resets the app. The bundle deliberately excludes local `data/users.json` and `data/profiles/`. Read-only locations fall back to `%LOCALAPPDATA%\WhaleMate`.
+
+Two unattended self-checks write `WhaleMate_data/runtime_check.txt`: `WhaleMate.exe --check` (Python, Tk, ReportLab, real PDF generation, resources) and `WhaleMate.exe --smoke` (constructs the full interface and verifies the data directory is writable). Startup failures go to `startup_error.log` and a dialog. macOS still uses `start_mac.command` with Python installed.
 
 ### 2. Accounts and permissions
 
@@ -123,7 +129,7 @@ Choose English or Simplified Chinese and a dark/light theme. New settings defaul
 
 | Area | Main modules or paths |
 | --- | --- |
-| Entry and launch | `main.py`, `learning_platform/__main__.py`, `launcher.py`, `start.bat` |
+| Entry and launch | `main.py`, `learning_platform/__main__.py`, `launcher.py`, `start_windows.bat` |
 | UI and design | `gui.py`, `modern.py`, `tokens.py`, `ui_tokens.py`, `widgets.py`, `dpi.py` |
 | Models and quiz rules | `models.py`, `services.py`, `repositories.py`, `storage.py` |
 | Accounts and moderation | `auth.py`, `bank_access.py`, `user_ui.py` |
@@ -154,7 +160,7 @@ The original CLI projects contributed atomic JSON storage, direct answer compari
 
 ### 1. 安装与启动
 
-使用包含 Tcl/Tk 的 Python 3.10+。Windows 可双击 `start.bat`，或执行：
+使用包含 Tcl/Tk 的 Python 3.10+。Windows 可双击 `start_windows.bat`，或执行：
 
 ```powershell
 cd D:\develop\workplace\INT6181GroupAssessmentV2
@@ -162,7 +168,13 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-也可使用 `python -m learning_platform`；`python -m tkinter` 可检查 Tk。启动器检查 Python 版本、Tk 和题库目录，不会自动安装 Python。Linux 需要图形桌面，部分发行版需安装 `python3-tk`。核心练习使用标准库；PDF 导出需要 ReportLab。修改代码后需重启程序。
+也可使用 `python -m learning_platform`；`python -m tkinter` 可检查 Tk。启动器会检查 Python 版本、Tk 和题库目录，并在首次运行时自动补齐 `requirements.txt` 中缺失的可选依赖（ReportLab，仅 PDF 导出需要）；安装失败或离线时只影响 PDF 导出，核心练习照常启动。启动器不会安装 Python 或 Tcl/Tk：缺少 Tk 时会按平台给出修复指引（Windows 安装器勾选 `tcl/tk and IDLE`、Linux 安装 `python3-tk`、macOS 使用 python.org 安装包）。Linux 还需图形桌面。修改代码后需重启程序。
+
+### 1.1 Windows 免安装打包版
+
+双击 `build_exe.bat` 重新打包，产物为 `dist/WhaleMate.exe`（约 38 MB，已内含 Python 3.13、Tcl/Tk 与 ReportLab）。只需分发这一个 exe，目标机器无需安装 Python。首次运行会在 exe 旁生成 `WhaleMate_data/`，并写入题库与图片；账号、学习进度和导入的图片都保存在这里，请保留并备份该文件夹，删除即等于重置。打包配置明确排除了本地 `data/users.json` 与 `data/profiles/`。若 exe 位于只读目录，数据会自动落到 `%LOCALAPPDATA%\WhaleMate`。
+
+交付前可在不打开界面的情况下自检：`WhaleMate.exe --check`（Python / Tk / ReportLab / 实际生成 PDF / 资源）与 `WhaleMate.exe --smoke`（构造完整界面并验证数据目录可写）。结果写入 `WhaleMate_data/runtime_check.txt`，启动异常写入 `startup_error.log` 并弹窗提示。macOS 仍使用 `start_mac.command` 并需预装 Python。
 
 ### 2. 账户与权限
 
