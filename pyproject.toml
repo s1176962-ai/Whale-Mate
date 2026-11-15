@@ -9,6 +9,8 @@ extend-exclude = [".workbuddy-ai/backup"]
 "learning_platform/ui_tokens.py" = ["F401"]
 # These local capture utilities set DPI and import paths before loading Tk UI.
 ".workbuddy-ai/capture_*.py" = ["E402"]
+# PyInstaller injects SPECPATH, Analysis, PYZ and EXE when it executes a spec.
+"WhaleMate.spec" = ["F821"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]

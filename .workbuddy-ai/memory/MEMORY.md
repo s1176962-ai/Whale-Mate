@@ -1,7 +1,7 @@
 # 项目长期笔记 · INT6181GroupAssessmentV2
 
 ## 定位
-完全离线的 Tkinter 桌面多学科（English / Mathematics / Science）单选练习平台，Python 3.10+，核心仅标准库 + JSON，PDF 导出才需 reportlab。正式目录 `D:\develop\workplace\INT6181GroupAssessmentV2`，启动 `python main.py` 或双击 `start.bat`（→ launcher.py 自检）。
+完全离线的 Tkinter 桌面多学科（English / Mathematics / Science）单选练习平台，Python 3.10+，核心仅标准库 + JSON，PDF 导出才需 reportlab。正式目录 `D:\develop\workplace\INT6181GroupAssessmentV2`，启动 `python main.py` 或双击 `start_windows.bat`（→ launcher.py 自检）。
 
 ## 架构速查
 `main.py / __main__.py → gui.Application`（单类，4209 行，全部页面）→ 服务层 `services / auth / i18n / ai_assistant / importing / exports / maintenance / display / motion` → 仓储层 `repositories / login_preferences / pdf_report / widgets` → `storage.JsonStore`（临时文件 + fsync + os.replace 原子写）→ `data/*.json`、`data/profiles/<uuid>/`、`assets/`。无循环导入。`user_ui.UserPage` / `editor_ui.EditorPage` 通过 app 回调反向调用 UI 方法。
