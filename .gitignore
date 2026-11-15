@@ -23,5 +23,6 @@ build/
 dist/
 WhaleMate_data/
 
-# WorkBuddy workspace data (local agent memory, not shipped)
+# WorkBuddy workspace data (local agent memory, previews and backups; not shipped)
 .workbuddy/
+.workbuddy-ai/
