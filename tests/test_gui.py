@@ -133,6 +133,45 @@ class GuiTests(unittest.TestCase):
         motion.cancel()
         self.assertFalse(second.winfo_exists())
 
+    def test_animated_settings_and_notebook_update_scroll_without_resize(self):
+        self.root.deiconify()
+        self.root.geometry("1000x700")
+        self.app.home()
+        self.root.update()
+        self.app.motion.enabled = True
+        data = self.app.progress.load()
+        for q in self.app.questions[:5]:
+            data["wrong"][q.id] = {
+                "count": 1, "last_answer": q.options[0],
+                "last_seen": "2026-11-21T10:00:00+08:00",
+            }
+        data["history"] = [{
+            "id": f"scroll-{index}", "date": "2026-11-21T10:00:00+08:00",
+            "subject": "English", "mode": "quiz", "total": 2,
+            "correct": 1, "incorrect": 1, "accuracy": 50.0,
+            "score": 1, "max_score": 2,
+        } for index in range(8)]
+        self.app.progress.save(data)
+        # Keep the window size unchanged throughout, as in real navigation.
+        for page in (self.app.settings, self.app.notebook, self.app.history, self.app.settings):
+            with self.subTest(page=page.__name__):
+                page()
+                self.root.update()
+                app = self.app
+                self.assertGreater(app.body.winfo_reqheight(), app.canvas.winfo_height())
+                self.assertEqual(int(app.canvas.itemcget(app.window, "height")), 0)
+                self.assertTrue(app.scrollbar.winfo_ismapped())
+                app.body.event_generate("<MouseWheel>", delta=-120)
+                self.root.update()
+                self.assertGreater(app.canvas.yview()[0], 0)
+                app.canvas.yview_moveto(1)
+                self.root.update()
+                self.assertGreaterEqual(app.canvas.canvasy(app.canvas.winfo_height()),
+                                        app.body.winfo_reqheight())
+        self.app.home()
+        self.root.update()
+        self.assertGreaterEqual(self.app.body.winfo_height(), self.app.canvas.winfo_height())
+
     def test_guest_cannot_open_notebook_or_history(self):
         self.app.enter_guest()
         with patch("learning_platform.gui.messagebox.showinfo") as info:
@@ -227,12 +266,9 @@ class GuiTests(unittest.TestCase):
         battle.choose_augment()
         self.root.update()
         self.assertTrue(all(card.find_all() for card in battle.augment_cards))
-        self.assertEqual(len(battle.augment_choices), 4)
-        self.assertEqual(len(battle.augment_cards), 4)
-        self.assertEqual(
-            {card.augment.rarity for card in battle.augment_cards},
-            {"silver", "gold", "prismatic", "demon"},
-        )
+        self.assertEqual(len(battle.augment_choices), 3)
+        self.assertEqual(len(battle.augment_cards), 3)
+        self.assertEqual(len({card.augment.id for card in battle.augment_cards}), 3)
         self.app.motion.cancel()
         chosen = battle.augment_choices[0]
         battle._confirm_augment(chosen)
@@ -350,6 +386,94 @@ class GuiTests(unittest.TestCase):
         self.root.after_cancel(battle.timer_id)
         battle._cancel_pending()
 
+    def test_infinite_match_can_settle_between_rounds_without_awarding_victory(self):
+        from learning_platform.battle import grade
+
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.count.set(battle.COUNT_INFINITE)
+        battle.initial_hp.set("1000")
+        battle.start()
+        self.assertTrue(battle.end_button.instate(["disabled"]))
+        self.assertEqual(battle.playback_status.cget("text"), self.app.tr("答题中，揭晓后可暂停"))
+        battle.end_match()
+        self.assertFalse(battle._results_shown)
+        battle.answer(battle.questions[0].answer)
+        self.assertEqual(battle.playback_status.cget("text"),
+                         self.app.tr("等待对手作答，揭晓后可暂停"))
+        battle.ai = grade(True, 3)
+        battle.planned = battle.questions[0].answer
+        battle.finish_round()
+        self.assertTrue(battle.end_button.instate(["!disabled"]))
+        self.assertIsNotNone(battle._auto_after)
+        battle.end_button.invoke()
+        self.assertTrue(battle._results_shown)
+        self.assertIsNone(battle._auto_after)
+        self.assertEqual(len(battle.records), 1)
+        data = battle.achievement_store.load()
+        self.assertEqual(data["stats"]["matches"], 0)
+        self.assertEqual(data["stats"]["wins"], 0)
+        self.assertNotIn("flawless", data["unlocked"])
+        with patch.object(battle.achievement_store, "evaluate") as evaluate:
+            battle.end_match()
+            battle.advance()
+            evaluate.assert_not_called()
+        self.root.after_cancel(battle.timer_id)
+
+    def test_wrong_answer_infinite_match_can_end_while_paused(self):
+        from learning_platform.battle import grade
+
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.count.set(battle.COUNT_INFINITE)
+        battle.initial_hp.set("1000")
+        battle.start()
+        battle.answer(None, timed_out=True)
+        battle.ai = grade(True, 3)
+        battle.planned = battle.questions[0].answer
+        battle.finish_round()
+        self.assertTrue(battle.paused)
+        self.assertEqual(battle.playback_status.cget("text"),
+                         self.app.tr("答错已暂停，查看解析后按空格继续"))
+        battle.end_match()
+        self.assertTrue(battle._results_shown)
+        self.assertIsNone(battle._auto_after)
+        self.root.after_cancel(battle.timer_id)
+
+    def test_infinite_knockout_uses_natural_result_even_when_end_is_clicked(self):
+        from learning_platform.battle import grade
+
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.count.set(battle.COUNT_INFINITE)
+        battle.start()
+        battle.answer(battle.questions[0].answer)
+        battle.ai = grade(False, 31)
+        battle.finish_round()
+        self.assertEqual(battle.ai_hp, 0)
+        battle.end_match()
+        data = battle.achievement_store.load()
+        self.assertEqual(data["stats"]["matches"], 1)
+        self.assertEqual(data["stats"]["wins"], 1)
+        self.root.after_cancel(battle.timer_id)
+
+    def test_demo_draft_guarantees_demon_without_changing_profile_pity(self):
+        self.app.battle_page()
+        battle = self.app.battle
+        store = battle._augment_draft_store()
+        store.store.write({"misses": 2})
+        battle.demo_choice.set(True)
+        battle.choose_augment()
+        self.assertEqual(len(battle.augment_choices), 3)
+        self.assertTrue(any(c.rarity == "demon" for c in battle.augment_choices))
+        self.assertEqual(store.misses(), 2)
+        account_path = store.store.path
+        self.app.user = None
+        self.assertNotEqual(battle._augment_draft_store().store.path, account_path)
+        self.assertEqual(battle._augment_draft_store().misses(), 0)
+        battle.setup()
+        self.assertFalse(battle.demo_choice.get())
+
     def test_battle_review_pause_and_space(self):
         from learning_platform.battle import grade
 
@@ -378,6 +502,7 @@ class GuiTests(unittest.TestCase):
         self.assertTrue(battle.paused)
         self.assertIsNone(battle._auto_after)
         self.assertEqual(battle.next.cget("text"), "▶")
+        self.assertEqual(battle.playback_status.cget("text"), self.app.tr("已暂停，按空格继续"))
         remaining = battle._advance_remaining
         battle.next.event_generate("<KeyPress-space>")
         self.root.update()
@@ -520,7 +645,7 @@ class GuiTests(unittest.TestCase):
         self.assertIn("s", battle.clock.cget("text"))
         # Battle-data output is on its own row below the clock, not sharing a
         # horizontal band with the score cards (that crowding hid the content).
-        self.assertEqual(battle.result.master.master.grid_info()["row"], 2)
+        self.assertEqual(battle.result.master.master.grid_info()["row"], 3)
         # Score cards share one uniform column definition => mirror symmetry.
         self.assertEqual(battle.player_score.grid_info()["column"], 0)
         self.assertEqual(battle.ai_score.grid_info()["column"], 2)

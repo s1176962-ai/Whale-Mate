@@ -107,13 +107,13 @@ Normal-quiz assistance sends text only. The first hint does not include the answ
 
 ### 7. Quiz battles
 
-All roles can enter battles from the sidebar. Both sides answer the same public-bank question within 30 seconds. Levels are Beginner, Normal, Hard and Hell, with simulated timing ranges of 12-24, 8-18, 4-12 and 2-7 seconds respectively. Local simulation uses correctness probabilities of 50%, 72%, 88% and 97%; API levels guide checking behaviour and timing rather than guaranteeing those accuracy rates.
+Choose public or personal questions (personal banks require login), 3/5/10 questions or infinite mode, opponent level, Local/API, and initial HP of 100/200/300/500/1,000. Pick one of three distinct weighted-random augments; rarities have no fixed slots. Normal drafts guarantee a Demon after three misses, reset on any Demon appearance, and persist progress per account. Optional Demo draft guarantees a Demon without changing normal progress; it defaults off on setup entry. Question difficulty sets the base clock to easy 25s / medium 30s / hard 45s. Timely correct answers earn 100 plus scaled speed bonuses and augment effects; score differences cause HP loss. Timing augments affect only the player. Exact thresholds and effects are defined in [current battle rules](BATTLE.md).
 
-Correct answers earn 100 points. Correct responses within 5/10/15/20/30 seconds receive +50/+40/+30/+20/+10 speed points. Wrong answers receive no correctness or speed points. Extra points are reserved for future game features. Initial HP can be 100, 200, 300, 500 or 1,000. The lower-scoring side loses HP equal to the round score difference, with a minimum of zero. Battle ends when HP is depleted or the selected questions are exhausted.
+During answering or waiting for the opponent, pause and early settlement are disabled. Correct answers advance automatically after about three seconds; mistakes/timeouts pause for review. ⏸ / ▶ and Space pause/resume the remaining transition time, with a visible state caption. Infinite mode reshuffles when questions run out and allows End match after a settled round. An early finish shows settled questions, scores and HP, without awarding victory/completion or incrementing completed-match/win counts; earned question/streak badges may still apply. Knockouts use normal results. Settlement cancels pending transitions and occurs once.
 
 **Local** is a labelled probability simulation. **API** submits a structured choice and concise decision summaries. Reading, comparing options, and choosing/checking appear as replacing activity stages, not a live transcript of internal reasoning. Choices and saved summaries are revealed after both sides finish; no second request invents a retrospective rationale. API failures, invalid decisions and late responses void the round with no points or HP changes and allow retry.
 
-API battles send the question text, options and any attached stem/option images, but not the answer key or explanation. Official DeepSeek image requests use `deepseek-flash`; text requests retain the configured model. Custom endpoints need a compatible vision model. Images must stay within the project and use PNG/JPEG/GIF/WebP, with limits of 8 MiB per image and 16 MiB total. Structured output is capped at 800 tokens. See [battle details](BATTLE.md). Skill-card selection and online multiplayer are not implemented.
+API battles send the question text, options and any attached stem/option images, but not the answer key or explanation. Official DeepSeek image requests use `deepseek-flash`; text requests retain the configured model. Custom endpoints need a compatible vision model. Images must stay within the project and use PNG/JPEG/GIF/WebP, with limits of 8 MiB per image and 16 MiB total. Structured output is capped at 800 tokens. See [battle details](BATTLE.md). Augment selection is implemented; online multiplayer is not.
 
 ### 8. Export reports
 
@@ -237,13 +237,13 @@ JSON 示例见上方英文部分，同一格式适用于两种语言。公共题
 
 ### 7. 答题对战
 
-所有角色均可进入对战，双方回答公共题库同一道题，每题 30 秒。入门、普通、困难、地狱的模拟时间分别为 12-24、8-18、4-12、2-7 秒。本地正确率分别为 50%、72%、88%、97%；API 难度控制检查要求和时间，不保证这些正确率。
+选择公共或本人的个人题库（个人题库需登录）、科目、主题、3/5/10 题或无限模式、对手等级、Local/API 及初始血量 100/200/300/500/1000。开局按权重抽三张不同海克斯供三选一，不固定稀有度。普通发牌连续三次未出魔王则第四次必出，出现即重置，按发牌次数计数并按账号保存；演示抽卡保证魔王且不影响普通保底，进入设置默认关闭。题目基础窗口为 easy 25 秒 / medium 30 秒 / hard 45 秒；时限内答对基础 100 分，加按窗口缩放的速度分及强化效果，低分方按分差扣血。加时或减时只影响玩家。详细阈值及效果统一见[当前对战规则](BATTLE.md)。
 
-答对基础 100 分，5/10/15/20/30 秒内答对额外获得 50/40/30/20/10 时间分，答错无正确分或时间分；额外分接口预留。初始血量可选 100、200、300、500、1000；低分方扣除本轮分差血量，下限为 0。血量归零或题目完成后结束。
+作答及等待对手期间不可暂停或主动结算。答对约三秒自动推进，答错或超时自动暂停供复盘。⏸ / ▶ 和空格暂停、恢复剩余等待时间，按钮旁说明当前状态。无限模式题尽重洗，已结算回合后可“结束并结算”。双方仍存活时标记主动结束，不计胜负、完成场次或通关成就，已达成的单题/连击成就仍可保存；已造成击倒则正常判胜负。结算取消自动推进且仅执行一次。
 
 Local 明确是概率模拟；API 返回结构化选项及简短决策摘要。读题、比较选项、选择检查三段提示依次替换，不代表真实内部思维。双方结束后公开选择与已保存摘要，不在结算后另外生成理由。接口失败、无效决策和迟到响应使当轮作废，不计分、不扣血，可重试。
 
-API 对战发送题干、选项及对应图片，不发送答案键或解析。官方 DeepSeek 图片请求使用 `deepseek-flash`，纯文字保留配置模型；自定义接口需要视觉模型。仅接受项目内图片，格式 PNG/JPEG/GIF/WebP，单图 8 MiB、总计 16 MiB；结构化输出 800 tokens。详见[对战说明](BATTLE.md)。技能卡选择和在线多人对战尚未实现。
+API 对战发送题干、选项及对应图片，不发送答案键或解析。官方 DeepSeek 图片请求使用 `deepseek-flash`，纯文字保留配置模型；自定义接口需要视觉模型。仅接受项目内图片，格式 PNG/JPEG/GIF/WebP，单图 8 MiB、总计 16 MiB；结构化输出 800 tokens。详见[对战说明](BATTLE.md)。海克斯强化选择已实现，在线多人对战尚未实现。
 
 ### 8. 导出报告
 

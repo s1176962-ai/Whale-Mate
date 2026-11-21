@@ -1,7 +1,10 @@
 """Rules tests for the battle augment pool and its match-long effects."""
 
 import random
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from learning_platform.augment_ui import (
     DEMON_BASE,
@@ -9,7 +12,7 @@ from learning_platform.augment_ui import (
     DEMON_STREAKS,
     edge_colors,
 )
-from learning_platform.augments import AUGMENTS, AugmentRuntime, draw_augments
+from learning_platform.augments import AUGMENTS, AugmentDraftStore, AugmentRuntime, draw_augments
 from learning_platform.battle import grade, speed_bands
 
 
@@ -31,14 +34,57 @@ class AugmentTests(unittest.TestCase):
         runtime = AugmentRuntime(card("sharp_mind"), 100)
         self.assertGreater(runtime.player_score(True, 25, 100, limit=25).extra, 0)
 
-    def test_draw_returns_one_card_per_tier(self):
-        picks = draw_augments(random.Random(7))
-        self.assertEqual(len(picks), 4)
-        self.assertEqual(len({item.id for item in picks}), 4)
-        self.assertEqual(
-            {item.rarity for item in picks},
-            {"silver", "gold", "prismatic", "demon"},
-        )
+    def test_guaranteed_draft_contains_one_demon_and_no_duplicates(self):
+        for seed in range(30):
+            hand = draw_augments(random.Random(seed), guarantee_demon=True)
+            self.assertEqual(len(hand), 3)
+            self.assertEqual(len(set(hand)), 3)
+            self.assertEqual(sum(c.rarity == "demon" for c in hand), 1)
+
+    def test_pity_survives_reload_resets_on_hit_and_demo_does_not_consume_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "augment_pity.json"
+            ordinary = tuple(c for c in AUGMENTS if c.rarity != "demon")[:3]
+            for expected in (1, 2, 3):
+                store = AugmentDraftStore(path)
+                with patch("learning_platform.augments.draw_augments", return_value=ordinary):
+                    self.assertEqual(store.draw(), ordinary)
+                self.assertEqual(store.misses(), expected)
+            # Demo never consumes or resets normal progress, even when pity is due.
+            store = AugmentDraftStore(path)
+            demo = store.draw(random.Random(7), demo=True)
+            self.assertIn(card("demon_pact"), demo)
+            self.assertEqual(store.misses(), 3)
+            guaranteed = store.draw(random.Random(7))
+            self.assertIn(card("demon_pact"), guaranteed)
+            self.assertEqual(AugmentDraftStore(path).misses(), 0)
+            # A natural appearance also resets the counter before the guarantee.
+            store.store.write({"misses": 1})
+            with patch("learning_platform.augments.draw_augments", return_value=guaranteed):
+                store.draw()
+            self.assertEqual(store.misses(), 0)
+            self.assertEqual(AugmentDraftStore(Path(directory) / "other.json").misses(), 0)
+
+    def test_draw_returns_three_distinct_random_cards(self):
+        hands = [draw_augments(random.Random(seed)) for seed in range(100)]
+        for hand in hands:
+            self.assertEqual(len(hand), 3)
+            self.assertEqual(len({item.id for item in hand}), 3)
+        self.assertGreater(len({tuple(item.id for item in hand) for hand in hands}), 1)
+        self.assertTrue(any(len({item.rarity for item in hand}) < 3 for hand in hands))
+        self.assertTrue(any(any(item.rarity == "demon" for item in hand) for hand in hands))
+        self.assertTrue(any(all(item.rarity != "demon" for item in hand) for hand in hands))
+        self.assertEqual(draw_augments(random.Random(7)), draw_augments(random.Random(7)))
+
+    def test_draw_respects_existing_card_weights(self):
+        rng = random.Random(17)
+        first = [draw_augments(rng)[0].id for _ in range(2000)]
+        self.assertGreater(first.count("sharp_mind"), first.count("demon_pact") * 2)
+        full = draw_augments(random.Random(7), count=len(AUGMENTS))
+        self.assertEqual(set(full), set(AUGMENTS))
+        for count in (0, -1, True, len(AUGMENTS) + 1):
+            with self.assertRaises(ValueError):
+                draw_augments(count=count)
 
     def test_all_cards_have_unique_ids_and_translatable_fields(self):
         self.assertEqual(len({item.id for item in AUGMENTS}), len(AUGMENTS))

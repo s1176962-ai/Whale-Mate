@@ -1,6 +1,6 @@
 # SRS Guide and Implementation Mapping
 
-Updated: 2026-11-13. English first, followed by Chinese.
+Updated: 2026-11-21. English first, followed by Chinese.
 
 ## English
 
@@ -20,6 +20,8 @@ Updated: 2026-11-13. English first, followed by Chinese.
 - Battle correctness and speed produce a score difference that reduces the losing side's HP. API failures, invalid decisions and late responses void the round without points or damage.
 - All fixed report text/metadata is English; source questions and notes retain their language. PDF/CSV timestamps use local `yyyy/mm/dd hh:mm:ss`, with the timezone labelled in PDF. Latin typography and Unicode fallback preserve full-width punctuation such as `！`.
 - Responsive controls, fixed quiz actions, bounded image caching and timer cleanup reduce unnecessary work without changing stored learning data. Settings support language, theme, window size and optional wheel selection.
+
+- Battles support weighted-random three-card augments, difficulty-scaled clocks, review-only pause/Space controls, and early settlement of infinite matches. [BATTLE.md](BATTLE.md) defines current rules and early-finish achievement restrictions.
 
 ### Requirement-to-module mapping
 
@@ -73,6 +75,8 @@ See [README](README.md), [test cases](TEST_CASES.md), [test report](TEST_REPORT.
 - 正确分和时间分形成分差并扣除低分方血量；失败、非法或迟到决策使轮次作废，不计分不扣血。
 - 固定报告文案和属性始终英文，题目和笔记保留原文；时间为本机 yyyy/mm/dd hh:mm:ss，PDF 标明时区。英文字体与 Unicode 回退保留全角 `！` 等字符。
 - 响应式控件、固定操作栏、有上限图片缓存与回调清理减少冗余，不修改学习数据；设置包含语言、主题、窗口和可选滚轮切换。
+
+- 对战支持随机三选一海克斯、按题目难度计时、仅揭晓后暂停与空格控制，以及无限模式主动结算；当前规则及主动结束的成就边界统一见 [BATTLE.md](BATTLE.md)。
 
 ### 需求与模块对应
 

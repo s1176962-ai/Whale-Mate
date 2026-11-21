@@ -30,3 +30,6 @@ WhaleMate_data/
 # Local skin preferences and temporary previews
 data/skins.json
 /tmp/
+
+# Guest augment pity progress (account progress is under ignored profiles/)
+data/augment_pity.json

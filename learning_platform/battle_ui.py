@@ -15,7 +15,7 @@ from . import tokens as T
 from .achievement_ui import AchievementToast
 from .achievements import AchievementStore
 from .augment_ui import AugmentBadge, AugmentCard
-from .augments import AugmentRuntime, draw_augments
+from .augments import DEMON_PITY_DRAWS, AugmentDraftStore, AugmentRuntime
 from .battle import (
     PROFILES,
     ROUND_SECONDS,
@@ -211,6 +211,12 @@ class BattlePage:
         )
         self.count_hint.pack(fill="x", pady=(T.px(T.SPACE_1), 0))
 
+        self.demo_choice = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            host, text=app.tr("演示抽卡：魔王必出（不影响普通保底）"),
+            variable=self.demo_choice,
+        ).pack(anchor="w", pady=(T.px(T.SPACE_2), 0))
+
         # --- More options ---------------------------------------------------
         more = ttk.LabelFrame(host, text=app.tr("更多设置"), padding=T.px(T.SPACE_2))
         more.pack(fill="x", pady=(T.px(T.SPACE_2), 0))
@@ -354,18 +360,32 @@ class BattlePage:
         )
         return maximum, questions
 
+    def _augment_draft_store(self):
+        # Achievement paths already isolate accounts by UUID; guests use the
+        # separate local guest-data directory.
+        path = AchievementStore.path_for(self.app).with_name("augment_pity.json")
+        return AugmentDraftStore(path)
+
     def choose_augment(self):
-        """Show one card per tier before the first round."""
+        """Show three random augments before the first round."""
         app = self.app
         try:
             self._prepare_match()
+            store = self._augment_draft_store()
+            demo = self.demo_choice.get()
+            choices = store.draw(demo=demo)
+            remaining = DEMON_PITY_DRAWS - store.misses() if not demo else 0
         except ValueError as exc:
             messagebox.showerror(app.tr("无法开始练习"), str(exc), parent=app.root)
             return
         app.clear(app.tr("选择海克斯强化"), show_heading=False, back=self.setup)
-        app.label(app.tr("开局四选一，效果持续整场对战。"))
-        app.label(app.tr("白银 · 黄金 · 棱彩 · 魔王，每局四档各一张。"))
-        self.augment_choices = draw_augments()
+        app.label(app.tr("开局三选一，效果持续整场对战。"))
+        app.label(app.tr("随机抽取三张不同强化，稀有度不固定。"))
+        if demo:
+            app.label(app.tr("演示抽卡：本次必含魔王，普通保底进度不变。"))
+        else:
+            app.label(app.tr("魔王保底：连续三次未出，第四次必出；最多还需 {0} 次。", remaining))
+        self.augment_choices = choices
         self.augment_cards = []
         for card in self.augment_choices:
             widget = AugmentCard(
@@ -398,6 +418,7 @@ class BattlePage:
         )
         self.index = 0
         self.records = []
+        self._results_shown = False
         self.max_hp = maximum
         self.augment = AugmentRuntime(augment, maximum)
         self.player_hp = self.ai_hp = self.max_hp
@@ -450,6 +471,7 @@ class BattlePage:
         app.body.configure(padding=(0, T.px(T.SPACE_1)))
         self.active = True
         self.paused = False
+        self._pause_reason = ""
         self._advance_remaining = 3.0
         self.player = self.ai = None
         self.started = time.monotonic()
@@ -609,12 +631,12 @@ class BattlePage:
         # score cards' number boxes (that crowding read as "content covered").
         self.clock = ttk.Label(
             panel,
-            text=f"{self.index + 1} / {len(self.questions)} · {self.player_limit}s",
+            text=self._clock_text(self.player_limit),
             style="Question.TLabel", anchor="center", justify="center",
         )
         self.clock.grid(row=0, column=1, sticky="n")
         data_row = ttk.Frame(panel)
-        data_row.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(T.px(8), 0))
+        data_row.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(T.px(8), 0))
         result_frame = ttk.Frame(data_row)
         result_frame.pack(fill="x")
         self.result = AssistantReply(
@@ -673,11 +695,29 @@ class BattlePage:
             foreground=[("disabled", palette["TEXT_MUTED"]),
                         ("active", palette["TEXT"])],
         )
-        self.next = ttk.Button(
-            panel, text="⏸", width=3, command=self.toggle_pause, style="BattlePlayback.TButton"
+        control_style.configure(
+            "BattlePlayback.TLabel", background=palette["SURFACE"],
+            foreground=palette["TEXT_MUTED"], font=T.TYPE_CAPTION,
         )
-        self.next.grid(row=1, column=1, pady=(T.px(4), 0))
-        self.next.state(["disabled"])
+        controls = tk.Frame(panel, bg=palette["SURFACE"])
+        controls.grid(row=1, column=1, pady=(T.px(4), 0))
+        self.next = ttk.Button(
+            controls, text="⏸", width=3, command=self.toggle_pause, style="BattlePlayback.TButton"
+        )
+        self.next.grid(row=0, column=0)
+        self.end_button = None
+        if self.infinite:
+            self.end_button = ttk.Button(
+                controls, text=app.tr("结束并结算"), command=self.end_match,
+                style="TButton",
+            )
+            self.end_button.grid(row=0, column=1, padx=(T.px(8), 0))
+        self.playback_status = ttk.Label(
+            panel, anchor="center", justify="center", wraplength=T.px(240),
+            style="BattlePlayback.TLabel",
+        )
+        self.playback_status.grid(row=2, column=1, sticky="ew", pady=(T.px(4), 0))
+        self._update_playback_controls()
         # Bind the button too: stop its native Space handler from invoking it
         # again before the event reaches the root binding.
         def space(event):
@@ -688,6 +728,8 @@ class BattlePage:
 
         key_id = app.root.bind("<space>", space, add="+")
         self.next.bind("<space>", space)
+        if self.end_button is not None:
+            self.end_button.bind("<space>", space)
 
         def cleanup_control(event):
             if event.widget is self.next:
@@ -710,10 +752,7 @@ class BattlePage:
                 duration = self.delay if self.decision else (low + high) / 2
                 stage = min(2, int(elapsed / max(duration, 1) * 3))
                 self.show_decision_stage(stage)
-            clock_text = (
-                f"{self.index + 1} / {len(self.questions)} · "
-                f"{max(0, self.player_limit - int(elapsed))}s"
-            )
+            clock_text = self._clock_text(max(0, self.player_limit - int(elapsed)))
             if self.clock.cget("text") != clock_text:
                 self.clock.configure(text=clock_text)
             if self.ai is None and self.planned is not None and elapsed >= self.delay:
@@ -767,6 +806,7 @@ class BattlePage:
         for button in self.buttons:
             button.state(["disabled"])
         self.player_status.configure(text=f"{self.player_name}: {self.app.tr('已锁定答案')}")
+        self._update_playback_controls()
 
     def finish_round(self):
         if not self.active:
@@ -794,7 +834,7 @@ class BattlePage:
             self.ai_score.clear()
             self.paused = True
             self.next.configure(text="▶")
-            self.next.state(["!disabled"])
+            self._update_playback_controls()
             self.fit_result()
             return
         # tick() only calls us once both sides have scored, so these are set.
@@ -879,9 +919,9 @@ class BattlePage:
         # Feed the segmented score cards; the centre dialog keeps the full text.
         self.player_score.set_score(player)
         self.ai_score.set_score(ai)
-        self.next.state(["!disabled"])
         self.paused = not bool(player.correct)
-        self.next.configure(text="▶" if self.paused else "⏸")
+        self._pause_reason = "wrong" if self.paused else ""
+        self._update_playback_controls()
         self.fit_result()
         if not self.paused:
             self._schedule_auto_advance()
@@ -909,22 +949,62 @@ class BattlePage:
                     110, lambda: self.ai_bar.float_text("×3", color="#FFFFFF")
                 )
 
+    def _clock_text(self, seconds):
+        progress = (
+            self.app.tr("第 {0} 题", len(self.records) + 1)
+            if self.infinite else f"{self.index + 1} / {len(self.questions)}"
+        )
+        return f"{progress} · {seconds}s"
+
+    def _update_playback_controls(self):
+        if self.active:
+            status = "等待对手作答，揭晓后可暂停" if self.player is not None else "答题中，揭晓后可暂停"
+            self.next.state(["disabled"])
+        else:
+            self.next.state(["!disabled"])
+            if self.decision_error:
+                status = "本题作废，按 ▶ 或空格重试"
+            elif self.paused:
+                status = (
+                    "答错已暂停，查看解析后按空格继续"
+                    if self._pause_reason == "wrong" else "已暂停，按空格继续"
+                )
+            else:
+                status = (
+                    "即将结算 · 空格暂停"
+                    if self.player_hp == 0 or self.ai_hp == 0
+                    or (not self.infinite and self.index == len(self.questions) - 1)
+                    else "自动进入下一题 · 空格暂停"
+                )
+        self.next.configure(text="▶" if self.paused else "⏸")
+        self.playback_status.configure(text=self.app.tr(status))
+        if self.end_button is not None:
+            enabled = not self.active and bool(self.records)
+            self.end_button.state(["!disabled"] if enabled else ["disabled"])
+
+    def end_match(self):
+        """Settle an infinite match only between rounds, using settled scores."""
+        if not self.infinite or self.active or not self.records or self._results_shown:
+            return
+        self._show_results(voluntary=self.player_hp > 0 and self.ai_hp > 0)
+
     def toggle_pause(self):
         """Pause result review only; the answer clock must always keep running."""
-        if self.active or not self.next.winfo_exists():
+        if self.active or self._results_shown or not self.next.winfo_exists():
             return
         if self.decision_error:
             self.round()
             return
         if self.paused:
             self.paused = False
-            self.next.configure(text="⏸")
+            self._pause_reason = ""
             self._schedule_auto_advance()
         else:
             self._advance_remaining = max(0.1, self._advance_deadline - time.monotonic())
             self._cancel_pending()
             self.paused = True
-            self.next.configure(text="▶")
+            self._pause_reason = "manual"
+        self._update_playback_controls()
 
     def _schedule_auto_advance(self):
         """Resume the result countdown with its remaining review time."""
@@ -1010,6 +1090,8 @@ class BattlePage:
             portrait.configure(text="AI")
 
     def advance(self):
+        if self._results_shown:
+            return
         self._cancel_pending()
         self.index += 1
         alive = self.player_hp > 0 and self.ai_hp > 0
@@ -1028,8 +1110,17 @@ class BattlePage:
         if alive and self.index < len(self.questions):
             self.round()
             return
+        self._show_results()
+
+    def _show_results(self, voluntary=False):
+        if self._results_shown:
+            return
+        self._results_shown = True
+        self.active = False
+        self.generation += 1
+        self._cancel_pending()
         app = self.app
-        won = self.player_hp > self.ai_hp
+        won = not voluntary and self.player_hp > self.ai_hp
         # Badges earned this battle; shown on the result page below the score.
         # Initialised up front so the result render can always read it.
         unlocked = []
@@ -1038,7 +1129,7 @@ class BattlePage:
             try:
                 unlocked = self.achievement_store.evaluate(
                     {
-                        "finished": True,
+                        "finished": not voluntary,
                         "won": won,
                         "max_hp": self.max_hp,
                         "difficulty": self.difficulty,
@@ -1060,15 +1151,17 @@ class BattlePage:
         player = sum(pair[0].total for pair in self.records)
         ai = sum(pair[1].total for pair in self.records)
         app.label(
-            app.tr("胜利")
-            if self.player_hp > self.ai_hp
-            else app.tr("平局")
-            if self.player_hp == self.ai_hp
-            else app.tr("惜败"),
+            app.tr("主动结束") if voluntary else (
+                app.tr("胜利") if self.player_hp > self.ai_hp
+                else app.tr("平局") if self.player_hp == self.ai_hp else app.tr("惜败")
+            ),
             "Question.TLabel",
         )
         app.label(f"{self.player_name} {player} : {ai} {self.opponent_name}")
         app.label(f"HP {self.player_hp} : {self.ai_hp}")
+        app.label(app.tr("已结算 {0} 题", len(self.records)))
+        if voluntary:
+            app.label(app.tr("主动结束不计胜负或完成场次，已达成的单题和连击成就仍可解锁。"))
         if self.augment.augment:
             AugmentBadge(
                 app.body, self.augment.augment, app.tr, motion=app.motion

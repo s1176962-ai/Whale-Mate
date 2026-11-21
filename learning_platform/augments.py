@@ -11,6 +11,7 @@ import random
 from dataclasses import dataclass
 
 from .battle import ROUND_SECONDS, BattleScore, apply_damage, grade
+from .storage import DataError, JsonStore
 
 RARITY_LABELS = {
     "silver": "白银",
@@ -101,24 +102,50 @@ AUGMENTS = (
     ),
 )
 
-DRAW_COUNT = 4
+DRAW_COUNT = 3
+DEMON_PITY_DRAWS = 4
 
 
-def draw_augments(rng=None, count=DRAW_COUNT):
-    """Offer one card per tier, then shuffle them into the draft hand.
-
-    Guaranteeing one card from each tier (silver / gold / prismatic / demon)
-    makes every rarity -- including the top demon tier -- visible each match,
-    the way the Arena augment draft does.
-    """
+def draw_augments(rng=None, count=DRAW_COUNT, guarantee_demon=False):
+    """Draw weighted cards without replacement; rarities have no fixed slots."""
+    if type(count) is not int or not 1 <= count <= len(AUGMENTS):
+        raise ValueError("Augment count must be between 1 and the pool size")
     rng = rng or random.Random()
+    pool = list(AUGMENTS)
     picked = []
-    for tier in RARITY_ORDER:
-        pool = [item for item in AUGMENTS if item.rarity == tier]
-        if pool:
-            picked.append(rng.choice(pool))
-    rng.shuffle(picked)
-    return tuple(picked[:count])
+    if guarantee_demon:
+        demon = next(item for item in pool if item.rarity == "demon")
+        pool.remove(demon)
+        picked.append(demon)
+    for _ in range(count - len(picked)):
+        chosen = rng.choices(pool, weights=[item.weight for item in pool], k=1)[0]
+        picked.append(chosen)
+        pool.remove(chosen)
+    if guarantee_demon:
+        rng.shuffle(picked)
+    return tuple(picked)
+
+
+class AugmentDraftStore:
+    """Per-profile pity progress, counted when a normal draft is offered."""
+
+    def __init__(self, path):
+        self.store = JsonStore(path, {"misses": 0})
+
+    def misses(self):
+        data = self.store.read()
+        value = data.get("misses") if isinstance(data, dict) else None
+        if type(value) is not int or not 0 <= value < DEMON_PITY_DRAWS:
+            raise DataError("Invalid augment pity progress")
+        return value
+
+    def draw(self, rng=None, demo=False):
+        if demo:
+            return draw_augments(rng, guarantee_demon=True)
+        misses = self.misses()
+        hand = draw_augments(rng, guarantee_demon=misses >= DEMON_PITY_DRAWS - 1)
+        self.store.write({"misses": 0 if any(c.rarity == "demon" for c in hand) else misses + 1})
+        return hand
 
 
 class AugmentRuntime:

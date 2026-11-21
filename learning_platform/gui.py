@@ -217,7 +217,11 @@ class Application:
             padding=((T.px(12), T.px(10)) if self.display["compact"] else (T.px(24), T.px(20))),
         )
         self.window = self.canvas.create_window((0, 0), window=self.body, anchor="n")
+        self._body_refresh_job = None
         self.body.bind("<Configure>", self._on_body_configure)
+        # A fixed-height body need not resize when its children's requested
+        # sizes grow. Observe their layout too, then measure after Tk settles.
+        root.bind("<Configure>", self._queue_body_refresh, add="+")
         self.canvas.bind("<Configure>", self._on_canvas_configure)
         self._page_wheel_remainder = 0
         root.bind("<MouseWheel>", self._page_wheel)
@@ -1134,6 +1138,17 @@ class Application:
                 self.canvas.itemconfigure(self.window, height=wanted)
         except tk.TclError:
             pass
+
+    def _queue_body_refresh(self, event=None):
+        if event is not None and not str(event.widget).startswith(str(self.body) + "."):
+            return
+        if self._body_refresh_job is None:
+            self._body_refresh_job = self.root.after_idle(self._refresh_body_layout)
+
+    def _refresh_body_layout(self):
+        self._body_refresh_job = None
+        if self.canvas.winfo_exists() and self.canvas.winfo_ismapped():
+            self._on_body_configure()
 
     def _on_body_configure(self, _event=None):
         self._sync_body_height()
@@ -2388,6 +2403,10 @@ class Application:
             # viewport from opaque to clear so only the page fades in, while
             # the navigation / chrome / window background stay put.
             self.motion.fade_overlay(self.canvas, duration=380)
+        # clear() runs before the new page is populated. Its animation can
+        # flush layout for the empty body; remeasure the completed page at idle.
+        self._queue_body_refresh()
+
 
     def _on_root_resize(self, event):
         if event.widget is not self.root:
@@ -5475,6 +5494,9 @@ class Application:
     def close(self):
         if self.can_leave():
             self.motion.cancel()
+            if self._body_refresh_job is not None:
+                self.root.after_cancel(self._body_refresh_job)
+                self._body_refresh_job = None
             self.root.destroy()
 
     def notebook(self):

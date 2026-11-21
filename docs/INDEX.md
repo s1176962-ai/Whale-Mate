@@ -7,7 +7,8 @@ Project documentation is collected here. Start with the [README](README.md) for 
 - [AGENTS.md](AGENTS.md)
 - [AI_ASSISTANT_PROMPT.md](AI_ASSISTANT_PROMPT.md)
 - [ASSET_IMAGES.md](ASSET_IMAGES.md)
-- [BATTLE.md](BATTLE.md)
+- [BATTLE.md](BATTLE.md) — current rules / 当前规则
+- [Battle history archive](archive/BATTLE_HISTORY_20261121.md) — superseded iterations / 历史迭代
 - [CHANGELOG.md](CHANGELOG.md)
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - [CODE_REVIEW_20261029.md](CODE_REVIEW_20261029.md)
