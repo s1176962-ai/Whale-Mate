@@ -684,7 +684,9 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(self.app._body_side_pad, T.px(T.SPACE_4))
         self.assertTrue(self.app._body_match_outer)
         body_pad_left, _ = self.app.body.cget("padding")
-        self.assertEqual(body_pad_left, 0)
+        # Older Tk/Python builds expose padding as Tcl string objects rather
+        # than Python ints. Compare the pixel distance, not its wrapper type.
+        self.assertEqual(self.app.body.winfo_pixels(str(body_pad_left)), 0)
 
         # Geometry invariant: the body window's real canvas bbox starts at
         # SPACE_4 and spans exactly the header's inner width. Root coordinates
@@ -722,8 +724,8 @@ class GuiTests(unittest.TestCase):
         right_c = acard.grid_info()["column"]
         self.assertEqual((left_c, right_c), (0, 1))
         # Symmetric padx: left card's right gap == right card's left gap.
-        lp = pcard.grid_info()["padx"]
-        rp = acard.grid_info()["padx"]
+        lp = tuple(pcard.winfo_pixels(str(value)) for value in pcard.grid_info()["padx"])
+        rp = tuple(acard.winfo_pixels(str(value)) for value in acard.grid_info()["padx"])
         self.assertEqual(lp[0], 0)  # left card hugs the outer left edge
         self.assertEqual(rp[1], 0)  # right card hugs the outer right edge
         self.assertEqual(lp[1], rp[0])  # equal middle gutter on both sides
