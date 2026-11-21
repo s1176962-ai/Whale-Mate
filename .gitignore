@@ -26,3 +26,7 @@ WhaleMate_data/
 # WorkBuddy workspace data (local agent memory, previews and backups; not shipped)
 .workbuddy/
 .workbuddy-ai/
+
+# Local skin preferences and temporary previews
+data/skins.json
+/tmp/

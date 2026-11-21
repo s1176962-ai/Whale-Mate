@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "scopes": {
+    "home": {
+      "default": "default",
+      "roles": ["mascot"],
+      "skins": {
+        "default": {
+          "display": {"zh": "默认", "en": "Default"},
+          "files": {"mascot": "home/default/mascot.png"}
+        }
+      }
+    },
+    "login": {
+      "default": "default",
+      "roles": ["decoration"],
+      "skins": {
+        "default": {
+          "display": {"zh": "默认", "en": "Default"},
+          "files": {"decoration": "login/default/decoration.png"}
+        }
+      }
+    },
+    "battle": {
+      "default": "default",
+      "roles": ["normal", "thinking", "correct", "wrong", "attack", "attacked", "die"],
+      "skins": {
+        "default": {
+          "display": {"zh": "默认", "en": "Default"},
+          "files": {
+            "normal": "../battle/skins/default/normal.png",
+            "thinking": "../battle/skins/default/thinking.png",
+            "correct": "../battle/skins/default/correct.png",
+            "wrong": "../battle/skins/default/wrong.png",
+            "attack": "../battle/skins/default/attack.png",
+            "attacked": "../battle/skins/default/attacked.png",
+            "die": "../battle/skins/default/die.png"
+          }
+        },
+        "hell": {
+          "display": {"zh": "地狱", "en": "Hell"},
+          "files": {
+            "normal": "../battle/skins/hell/normal.png",
+            "thinking": "../battle/skins/hell/thinking.png",
+            "correct": "../battle/skins/hell/correct.png",
+            "wrong": "../battle/skins/hell/wrong.png",
+            "attack": "../battle/skins/hell/attack.png",
+            "attacked": "../battle/skins/hell/attacked.png",
+            "die": "../battle/skins/hell/die.png"
+          }
+        }
+      }
+    }
+  }
+}

@@ -7,8 +7,10 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from typing import Any, cast
 
 from . import modern
+from . import skins as skin_store
 from . import ui_tokens as T
 from .ai_assistant import AiAssistant, AiSettings, question_message
 from .auth import AuthService
@@ -19,6 +21,7 @@ from .image_cache import portrait_image, source_image
 from .importing import QuestionImportService
 from .login_preferences import LoginPreferences
 from .maintenance import QuestionEditor
+from .mascot import MascotWalker
 from .models import option_label
 from .motion import Motion
 from .repositories import (
@@ -81,16 +84,29 @@ class AssistantReply(tk.Text):
     def __init__(self, parent, **kwargs):
         text = kwargs.pop("text", "")
         self._on_text = kwargs.pop("on_text", None)
+        # tk.Text has no widget-level -justify; alignment is a tag property.
+        # NOTE: Tk's built-in "all" tag ignores `justify` on this platform —
+        # only a named tag explicitly added to the range actually centres.
+        self._justify = kwargs.pop("justify", None)
         super().__init__(parent, **kwargs)
+        if self._justify is not None:
+            self.tag_configure("aligned", justify=self._justify)
         self.configure(text=text)
 
-    def configure(self, cnf=None, **kwargs):
+    def configure(self, cnf=None, **kwargs):  # pyright: ignore[reportIncompatibleMethodOverride]
+        # TK's configure() stub declares a getter-return shape our text-setting
+        # override cannot honour; runtime behaviour (returning super's value) is unchanged.
         text = kwargs.pop("text", None)
         result = super().configure(cnf, **kwargs)
         if text is not None:
             super().configure(state="normal")
             self.delete("1.0", "end")
             self.insert("1.0", text)
+            if self._justify is not None:
+                # Include the trailing newline: Tk decides a line's justify
+                # from the tag on its terminating newline, so stopping at
+                # end-1c leaves the final line left-aligned.
+                self.tag_add("aligned", "1.0", "end")
             self.yview_moveto(0)
             super().configure(state="disabled")
             if self._on_text is not None:
@@ -118,6 +134,7 @@ class Application:
         self.tr = Translator(self.guest_progress_path.parent)
         T.set_theme(self.tr.theme)
         self.login_preferences = LoginPreferences(self.guest_progress_path.parent)
+        self.skin_prefs = skin_store.SkinPreferences(self.guest_progress_path.parent)
         self.ai_settings = AiSettings(self.guest_progress_path.parent)
         self.ai_assistant = AiAssistant(self.ai_settings)
         self._ai_asked = set()
@@ -131,11 +148,12 @@ class Application:
             self.display_warning = str(exc)
         self.motion = Motion(root)
         self.motion.enabled = self.tr.motion_enabled()
+        modern.set_motion(self.motion)
         self.signed_in = False
         self.users_page = None
         self.user = None
         self.editor = None
-        self.engine = None
+        self.engine: QuizEngine | None = None
         self.images = []
         self.timer_seconds = tk.StringVar(value="0")
         root.title(self.tr("Quiz App"))
@@ -163,18 +181,33 @@ class Application:
         outer = ttk.Frame(root, style="App.TFrame")
         outer.pack(fill="both", expand=True)
         self.outer = outer
-        self.login_split = None
-        self.login_host = None
-        self.login_form = None
-        self._login_after = None
+        # nav / action_dock / battle_header / quiz_progress_header are created lazily
+        # by their pages; annotate them here so static checkers know they may be None.
+        self.nav: tk.Frame | None
+        self.action_dock: ttk.Frame | None
+        self.battle_header: ttk.Frame | None
+        self.quiz_progress_header: ttk.Frame | None
+        self.login_split: tk.Frame | None = None
+        self.login_host: tk.Frame | None = None
+        self.login_form: tk.Frame | None = None
+        self._login_after: str | None = None
         self._login_layout_busy = False
         self.show_password = False
         self._login_busy = False
-        self._login_result = None
+        self._login_result: tuple[str, Any] | None = None
         self._quiz_keys_bound = False
         self._last_filters = None
         self._last_session = None
         self.canvas = tk.Canvas(outer, highlightthickness=0, bg=T.BG, borderwidth=0)
+        # Horizontal inset for the scrolling body window. Battle pages widen
+        # this to match the fixed header/dock (SPACE_4) so question cards line
+        # up with the health bars; other pages keep the default PAGE_PAD.
+        self._body_side_pad = T.px(T.PAGE_PAD)
+        # Battle pages measure the scrolling body against `outer` instead of
+        # `canvas`: the vertical scrollbar steals ~10px from the canvas only,
+        # so using the canvas width made question cards narrower than the
+        # fixed health-bar header. Other pages keep the canvas-based sizing.
+        self._body_match_outer = False
         self.scrollbar = ttk.Scrollbar(outer, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
@@ -186,6 +219,7 @@ class Application:
         self.window = self.canvas.create_window((0, 0), window=self.body, anchor="n")
         self.body.bind("<Configure>", self._on_body_configure)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
+        self._page_wheel_remainder = 0
         root.bind("<MouseWheel>", self._page_wheel)
         root.bind_class("TCombobox", "<MouseWheel>", self._control_wheel)
         root.bind_class("TSpinbox", "<MouseWheel>", self._control_wheel)
@@ -237,6 +271,7 @@ class Application:
         """Rebind tokens, refresh ttk styles, then rebuild the current screen."""
         if name not in T.THEMES or name == T.theme_name():
             return
+        old_bg = T.BG
         try:
             self.tr.set_theme(name)
         except (ValueError, DataError) as exc:
@@ -255,7 +290,7 @@ class Application:
             nav.destroy()
             self.nav = None
         self._rebuild_screen()
-        self.motion.fade_in(self.outer)
+        self.motion.color_wash(self.outer, old_bg, T.BG)
 
     def _rebuild_screen(self):
         """Pages are cheap to recreate; an in-flight quiz keeps its engine."""
@@ -277,7 +312,7 @@ class Application:
             "users": self.manage_users,
             "personal": self.personal_bank_page,
         }
-        action = pages.get(getattr(self, "_nav_key", None))
+        action = pages.get(getattr(self, "_nav_key", "") or "")
         if action is None:
             action = self.home if self.signed_in else self.login_page
         action()
@@ -611,16 +646,24 @@ class Application:
         # ttk cannot rebind element images, so repaint the same PhotoImage pair in
         # place on every re-style. The element keeps its reference and picks up the
         # new palette automatically.
-        if not getattr(self, "check_images", None):
-            self.check_images = [
+        # Keep the two images on the root, not on the Application instance: a
+        # ttk element name is global to the interpreter, so a second app built
+        # on the same root must reuse the pair instead of creating the element
+        # again (Tcl raises "Duplicate element Checkmark.indicator").
+        check_images = getattr(root, "_check_images", None)
+        if not check_images:
+            check_images = [
                 tk.PhotoImage(master=root, width=18, height=18),
                 tk.PhotoImage(master=root, width=18, height=18),
             ]
+            root._check_images = check_images
+        self.check_images = check_images
+        if "Checkmark.indicator" not in style.element_names():
             style.element_create(
                 "Checkmark.indicator",
                 "image",
-                self.check_images[0],
-                ("selected", self.check_images[1]),
+                check_images[0],
+                ("selected", check_images[1]),
             )
         for selected, icon in enumerate(self.check_images):
             icon.blank()
@@ -805,12 +848,15 @@ class Application:
             try:
                 layout = _strip_focus(style.layout(name))
                 if layout:
-                    style.layout(name, layout)
+                    # ttk's layout() stub is narrower than the runtime value it
+                    # accepts; the stripped layout is the same structure Tk gave us.
+                    cast(Any, style).layout(name, layout)
             except (tk.TclError, ValueError):
                 pass
 
     def _ensure_nav(self):
-        if getattr(self, "nav", None) and self.nav.winfo_exists():
+        nav = getattr(self, "nav", None)
+        if nav is not None and nav.winfo_exists():
             self._paint_nav()
             return
         self.nav = tk.Frame(
@@ -850,9 +896,9 @@ class Application:
             )
             button.set_text(self.tr(caption))
             button.pack(fill="x", padx=T.px(T.SPACE_2), pady=T.px(T.SPACE_1))
-            button._nav_key = key
-            button._icon = glyph
-            button._caption = caption
+            setattr(button, "_nav_key", key)
+            setattr(button, "_icon", glyph)
+            setattr(button, "_caption", caption)
             self._nav_buttons[key] = button
         foot = tk.Frame(self.nav, bg=T.NAV_BG)
         foot.pack(side="bottom", fill="x", padx=T.px(T.SPACE_2), pady=T.px(T.SPACE_4))
@@ -920,6 +966,41 @@ class Application:
         self.battle = BattlePage(self)
         self.battle.setup()
 
+    def achievements_page(self, back=None):
+        """Badge wall shown from the battle setup page; ``back`` is the caller."""
+        from .achievement_ui import AchievementCard
+        from .achievements import ACHIEVEMENTS, AchievementStore
+
+        return_to = back if back is not None else self.battle_page
+        self.clear(self.tr("成就徽章"), show_heading=False, back=return_to)
+        if not self.user:
+            self.label(
+                self.tr("徽章与账号绑定。注册或登录账号后即可解锁并保存成就。"),
+                "Question.TLabel",
+            )
+            self.button(self.tr("注册 / 登录"), lambda: self.login_page(registering=True), "Accent.TButton")
+            return
+        if not self.check_session():
+            return
+        try:
+            unlocked = AchievementStore(AchievementStore.path_for(self)).unlocked_ids()
+        except (ValueError, OSError):
+            unlocked = set()
+        count = f"{len(unlocked)} / {len(ACHIEVEMENTS)}"
+        self.label(self.tr("已解锁 {0} 枚徽章。", count), "Question.TLabel")
+        grid = ttk.Frame(self.body)
+        grid.pack(fill="both", expand=True, pady=T.px(T.SPACE_2))
+        for index, badge in enumerate(ACHIEVEMENTS):
+            card = AchievementCard(
+                grid, badge, badge.id in unlocked, self.tr, motion=self.motion
+            )
+            card.grid(
+                row=index // 2, column=index % 2,
+                sticky="nsew", padx=T.px(T.SPACE_1), pady=T.px(T.SPACE_1),
+            )
+        for column in (0, 1):
+            grid.columnconfigure(column, weight=1, uniform="badge")
+
     def _nav_hover(self, button, entering):
         # Hover / pressed / focus / disabled states are handled inside NavItem.
         return None
@@ -933,7 +1014,9 @@ class Application:
             if self.user["role"] == "admin":
                 expected.add("users")
         if getattr(self, "_nav_buttons", None) and set(self._nav_buttons) != expected:
-            self.nav.destroy()
+            nav = getattr(self, "nav", None)
+            if nav is not None:
+                nav.destroy()
             self.nav = None
             self._ensure_nav()
             return
@@ -941,7 +1024,7 @@ class Application:
         for key, button in getattr(self, "_nav_buttons", {}).items():
             if not button.winfo_exists():
                 continue
-            button.set_text(self.tr(button._caption))
+            button.set_text(self.tr(getattr(button, "_caption", "")))
             button.set_selected(key == current)
         label = getattr(self, "nav_user", None)
         if label and label.winfo_exists():
@@ -958,14 +1041,16 @@ class Application:
     def _set_chrome(self, visible):
         if visible:
             self._ensure_nav()
-            if not self.nav.winfo_ismapped():
-                self.nav.pack(side="left", fill="y", before=self.outer)
+            nav = self.nav
+            if nav is not None and not nav.winfo_ismapped():
+                nav.pack(side="left", fill="y", before=self.outer)
             if not self.chrome.winfo_ismapped():
                 self.chrome.pack(fill="x", before=self.outer)
                 self.rule.pack(fill="x", before=self.outer)
         else:
-            if getattr(self, "nav", None) and self.nav.winfo_ismapped():
-                self.nav.pack_forget()
+            nav = getattr(self, "nav", None)
+            if nav is not None and nav.winfo_ismapped():
+                nav.pack_forget()
             self.chrome.pack_forget()
             self.rule.pack_forget()
 
@@ -985,7 +1070,8 @@ class Application:
         """Relayout login without embedding the form in a Canvas (avoids IME lag)."""
         if self._login_layout_busy:
             return
-        if not getattr(self, "login_split", None) or not self.login_split.winfo_exists():
+        split = self.login_split
+        if split is None or not split.winfo_exists():
             return
         self._login_layout_busy = True
         try:
@@ -995,9 +1081,18 @@ class Application:
 
     def _on_canvas_configure(self, event):
         width = max(event.width, 1)
+        # On battle pages the header/score dock are packed into `outer` and
+        # sized against its full width. The scrollbar only narrows `canvas`,
+        # so measuring the body against the canvas made the cards shrink
+        # whenever a scrollbar appeared. Use `outer` so both share one edge.
+        if getattr(self, "_body_match_outer", False):
+            outer_w = self.outer.winfo_width()
+            if outer_w > 1:
+                width = outer_w
+        side = self._body_side_pad
         content_w = min(
             T.px(T.CONTENT_MAX),
-            max(width - T.px(T.PAGE_PAD) * 2, T.px(T.CONTENT_MIN)),
+            max(width - side * 2, T.px(T.CONTENT_MIN)),
         )
         if self.canvas.coords(self.window) != [float(width // 2), 0.0]:
             self.canvas.coords(self.window, width // 2, 0)
@@ -1005,6 +1100,19 @@ class Application:
             self.canvas.itemconfigure(self.window, width=content_w)
         self._sync_body_height()
         self._sync_scroll()
+
+    def set_body_side_pad(self, px, match_outer=None):
+        """Set the scrolling body's horizontal inset and re-apply its width.
+
+        Battle uses SPACE_4 with ``match_outer=True``: the fixed health bars
+        are sized against ``outer``, so the body must be too (the scrollbar
+        narrows only ``canvas``). Callers must also zero the body frame's own
+        horizontal padding, otherwise the two insets add up again.
+        """
+        self._body_side_pad = T.px(px)
+        if match_outer is not None:
+            self._body_match_outer = match_outer
+        self._on_canvas_configure(type("E", (), {"width": self.canvas.winfo_width()})())
 
     def _sync_body_height(self):
         """Let short pages (dashboard) use the full viewport height.
@@ -1018,7 +1126,10 @@ class Application:
         try:
             viewport = max(self.canvas.winfo_height(), 1)
             needed = max(self.body.winfo_reqheight(), 1)
-            wanted = str(max(viewport, needed))
+            # Tall pages must retain their natural height. Pinning the Canvas
+            # window to a sampled request freezes later wrapped-label changes:
+            # the body then emits no Configure event to refresh the region.
+            wanted = str(viewport if needed <= viewport else 0)
             if self.canvas.itemcget(self.window, "height") != wanted:
                 self.canvas.itemconfigure(self.window, height=wanted)
         except tk.TclError:
@@ -1027,7 +1138,14 @@ class Application:
     def _on_body_configure(self, _event=None):
         self._sync_body_height()
         try:
-            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+            bounds = self.canvas.bbox("all")
+            if bounds:
+                _, top, right, bottom = bounds
+                self.canvas.configure(scrollregion=(
+                    0, top, max(right, self.canvas.winfo_width()),
+                    max(bottom, self.body.winfo_reqheight()),
+                ))
+                self.canvas.xview_moveto(0)
             self._sync_scroll()
         except tk.TclError:
             pass
@@ -1138,7 +1256,7 @@ class Application:
         self.login_error.configure(text=message)
         if not self.login_error.winfo_ismapped():
             self.login_error.pack(
-                anchor="w", fill="x", before=self.login_button._shell, pady=(0, SPACE_SM)
+                anchor="w", fill="x", before=getattr(self.login_button, "_shell"), pady=(0, SPACE_SM)
             )
         targets = fields or list(getattr(self, "login_fields", []))
         self._login_error_fields = set(targets)
@@ -1221,7 +1339,7 @@ class Application:
             parent, text, command, TYPE_TOOL, T.BG, T.TEXT, SPACE_3, max(8, (HIT - 18) // 2)
         )
         self._bind_chrome(button, T.BG, T.HOVER, T.TRACK, T.TEXT)
-        button._button = button
+        setattr(button, "_button", button)
         return button
 
     def _text_button(self, parent, text, command, bg=None):
@@ -1254,7 +1372,7 @@ class Application:
         self._bind_chrome(
             button, T.BUTTON_FILL, T.PRIMARY_HOVER, T.PRIMARY_ACTIVE, T.BUTTON_INK, T.BUTTON_INK
         )
-        button._shell = shell
+        setattr(button, "_shell", shell)
         return button
 
     def _text_entry(self, parent, variable, show=None):
@@ -1273,7 +1391,7 @@ class Application:
             show=show or "",
         )
         entry.pack(fill="x", ipady=T.px(12), padx=T.px(1), pady=T.px(1))
-        entry._shell = shell
+        setattr(entry, "_shell", shell)
         return entry
 
     def _set_login_button(self, text, disabled):
@@ -1289,8 +1407,9 @@ class Application:
             fg=ink,
             cursor="arrow" if disabled else "hand2",
         )
-        if getattr(self.login_button, "_shell", None):
-            self.login_button._shell.configure(bg=color)
+        btn_shell = getattr(self.login_button, "_shell", None)
+        if btn_shell:
+            btn_shell.configure(bg=color)
         for entry in getattr(self, "login_fields", []):
             entry.configure(state="disabled" if disabled else "normal")
         toggle = getattr(self, "password_toggle", None)
@@ -1400,7 +1519,7 @@ class Application:
         lang = self._tool_button(
             self.login_tools, "中文 ▾" if self.tr.language == "zh" else "EN ▾", lambda: None
         )
-        lang._button.configure(
+        getattr(lang, "_button").configure(
             command=lambda: lang_menu.tk_popup(
                 lang.winfo_rootx(), lang.winfo_rooty() + lang.winfo_height()
             )
@@ -1452,7 +1571,9 @@ class Application:
             anchor="w"
         )
         name_entry = self._text_entry(card, self.login_name)
-        name_entry._shell.pack(anchor="w", fill="x", pady=(T.px(SPACE_XS), T.px(SPACE_MD)))
+        getattr(name_entry, "_shell").pack(
+            anchor="w", fill="x", pady=(T.px(SPACE_XS), T.px(SPACE_MD))
+        )
         tk.Label(card, text=self.tr("密码"), font=TYPE_LABEL, bg=T.SURFACE, fg=T.TEXT).pack(
             anchor="w"
         )
@@ -1473,7 +1594,7 @@ class Application:
             highlightthickness=0,
             show="•",
         )
-        password_entry._shell = password_box
+        setattr(password_entry, "_shell", password_box)
         password_entry.pack(side="left", fill="x", expand=True, ipady=T.px(12), padx=T.px(SPACE_SM))
         self.password_entries.append(password_entry)
         self.password_toggle = self._text_button(
@@ -1494,7 +1615,9 @@ class Application:
                 anchor="w"
             )
             confirm = self._text_entry(card, self.login_confirm, show="•")
-            confirm._shell.pack(anchor="w", fill="x", pady=(T.px(SPACE_XS), T.px(SPACE_MD)))
+            getattr(confirm, "_shell").pack(
+                anchor="w", fill="x", pady=(T.px(SPACE_XS), T.px(SPACE_MD))
+            )
             self.password_entries.append(confirm)
         self.login_fields = [name_entry, *self.password_entries]
         self._login_error_fields = set()
@@ -1513,7 +1636,9 @@ class Application:
             self.tr("注册并进入") if registering else self.tr("登录"),
             lambda: self.authenticate(registering),
         )
-        self.login_button._shell.pack(anchor="w", fill="x", pady=(0, T.px(SPACE_MD)))
+        getattr(self.login_button, "_shell").pack(
+            anchor="w", fill="x", pady=(0, T.px(SPACE_MD))
+        )
         account_row = tk.Frame(card, bg=T.SURFACE)
         account_row.pack(anchor="w")
         if registering:
@@ -1567,27 +1692,39 @@ class Application:
 
         self._login_after = self.root.after(1, _safe_layout)
 
-        decoration = self.project_root / "assets" / "images" / "home-decoration.png"
+        selected = self.skin_prefs.selected(self.project_root, "login")
+        decoration = skin_store.asset_path(
+            self.project_root, "login", selected, "decoration"
+        )
+        if decoration is None:
+            decoration = self.project_root / "assets" / "images" / "home-decoration.png"
         if decoration.exists():
-            base = tk.PhotoImage(master=self.root, file=str(decoration))
-            ornament = tk.Label(self.login_host, bg=T.BG, bd=0, takefocus=0)
+            try:
+                # Use the bounded root-local cache instead of a fresh
+                # PhotoImage on every login-page build. A transient Tcl image
+                # failure must never abort Application construction.
+                base = source_image(self.root, decoration)
+            except (OSError, ValueError, tk.TclError):
+                base = None
+            if base is not None:
+                ornament = tk.Label(self.login_host, bg=T.BG, bd=0, takefocus=0)
 
-            def position_ornament(_event=None):
-                if not ornament.winfo_exists() or self.login_host is None:
-                    return
-                width = self.login_host.winfo_width()
-                height = self.login_host.winfo_height()
-                if width < T.px(1050) or height < T.px(650):
-                    ornament.place_forget()
-                    return
-                size = min(T.px(260), int(width * 0.14), int(height * 0.28))
-                factor = max(1, (max(base.width(), base.height()) + size - 1) // size)
-                ornament.image = base.subsample(factor)
-                ornament.configure(image=ornament.image)
-                ornament.place(relx=1, rely=1, x=-T.px(12), y=-T.px(12), anchor="se")
+                def position_ornament(_event=None):
+                    if not ornament.winfo_exists() or self.login_host is None:
+                        return
+                    width = self.login_host.winfo_width()
+                    height = self.login_host.winfo_height()
+                    if width < T.px(1050) or height < T.px(650):
+                        ornament.place_forget()
+                        return
+                    size = min(T.px(260), int(width * 0.14), int(height * 0.28))
+                    factor = max(1, (max(base.width(), base.height()) + size - 1) // size)
+                    setattr(ornament, "image", base.subsample(factor))
+                    ornament.configure(image=getattr(ornament, "image"))
+                    ornament.place(relx=1, rely=1, x=-T.px(12), y=-T.px(12), anchor="se")
 
-            self.login_host.bind("<Configure>", position_ornament, add="+")
-            self.root.after_idle(position_ornament)
+                self.login_host.bind("<Configure>", position_ornament, add="+")
+                self.root.after_idle(position_ornament)
 
     def authenticate(self, registering=False):
         if self._login_busy or not getattr(self, "login_button", None):
@@ -1734,6 +1871,143 @@ class Application:
             self.users_page = UserPage(self)
             self.users_page.show_list()
 
+    def _skin_scope_labels(self):
+        """Localised row labels for the three skin scopes."""
+        return {
+            "home": ("首页皮肤", "home"),
+            "login": ("登录页皮肤", "login"),
+            "battle": ("对战皮肤", "battle"),
+        }
+
+    def skin_settings(self):
+        """Independent wardrobe, entered from the home mascot."""
+        self.clear(self.tr("皮肤"), show_heading=False, back=self.home)
+
+        def fit(label):
+            def wrap(event):
+                target = max(1, event.width - T.px(T.SPACE_1))
+                if label.cget("wraplength") != target:
+                    label.configure(wraplength=target)
+            label.bind("<Configure>", wrap, add="+")
+            return label
+
+        self._build_skin_settings(T.px(T.SPACE_4), T.px(T.SPACE_3), fit)
+        self.button(self.tr("返回"), self.home)
+
+    def _build_skin_settings(self, pad, gap, fit):
+        """Skin picker; battle has one row per difficulty, others one row."""
+        root = self.project_root
+        card = ttk.LabelFrame(self.body, text=self.tr("皮肤"), padding=pad)
+        card.pack(fill="x", pady=gap)
+        fit(
+            ttk.Label(
+                card,
+                text=self.tr("首页吉祥物、对战立绘、登录页装饰可分别换肤；每个对手等级也能单独选皮肤。"),
+                style="Card.TLabel",
+            )
+        ).pack(fill="x")
+
+        lang = "en" if self.tr.language == "en" else "zh"
+        labels = self._skin_scope_labels()
+        self._skin_controls = {}
+
+        def picker_row(parent, title, scope, values, display, selected, on_change):
+            row = tk.Frame(parent, bg=T.SURFACE)
+            row.pack(fill="x", pady=(T.px(T.SPACE_3), 0))
+            row.columnconfigure(1, weight=1)
+            tk.Label(
+                row,
+                text=title,
+                bg=T.SURFACE,
+                fg=T.TEXT,
+                font=T.TYPE_BODY_LARGE,
+                anchor="w",
+                width=12,
+            ).grid(row=0, column=0, sticky="w")
+            picker = modern.Segmented(row, values=values, labels=display, on_change=on_change)
+            if selected in values:
+                picker.set(selected)
+            picker.configure(width=1)
+            picker.grid(row=0, column=1, sticky="ew", padx=(T.px(T.SPACE_2), 0))
+            return picker
+
+        for scope in skin_store.scopes():
+            skin_ids = skin_store.scope_skins(root, scope)
+            display = [skin_store.skin_display(root, scope, sid, lang) for sid in skin_ids]
+            title, _ = labels.get(scope, (scope, scope))
+
+            if scope != "battle":
+                selected = self.skin_prefs.selected(root, scope)
+                picker = picker_row(
+                    card,
+                    self.tr(title),
+                    scope,
+                    list(skin_ids),
+                    display,
+                    selected,
+                    lambda value, s=scope: self._apply_skin(s, value),
+                )
+                self._skin_controls[scope] = picker
+                continue
+
+            # Battle: one sub-row per opponent difficulty. `auto` follows the
+            # historical difficulty rule (地狱 -> hell), a pick overrides it.
+            battle_values = [skin_store.AUTO_SKIN] + list(skin_ids)
+            battle_display = [self.tr("跟随难度")] + display
+            mapping = self.skin_prefs.selected(root, "battle")
+            assert isinstance(mapping, dict), "battle scope without a difficulty returns a mapping"
+            self._skin_controls["battle"] = {}
+            for difficulty in skin_store.BATTLE_DIFFICULTIES:
+                diff_label = self.tr(difficulty)
+                picker = picker_row(
+                    card,
+                    diff_label,
+                    "battle",
+                    battle_values,
+                    battle_display,
+                    mapping.get(difficulty, skin_store.AUTO_SKIN),
+                    lambda value, d=difficulty: self._apply_battle_skin(d, value),
+                )
+                self._skin_controls["battle"][difficulty] = picker
+
+        fit(
+            ttk.Label(
+                card,
+                text=self.tr("皮肤会立即生效并记住选择。"),
+                style="Card.TLabel",
+            )
+        ).pack(fill="x", pady=(T.px(T.SPACE_3), 0))
+
+    def _apply_skin(self, scope, skin):
+        """Persist a home/login skin choice and refresh the visible screen."""
+        try:
+            self.skin_prefs.select(scope, skin)
+        except DataError as exc:
+            messagebox.showerror(self.tr("保存失败"), self.tr(str(exc)), parent=self.root)
+            return
+        if scope == "home":
+            # Drop cached PhotoImages so the new mascot is picked up next build.
+            self.__dict__.pop("_mascot_base", None)
+            self.__dict__.pop("_mascot_cache", None)
+        if scope == "login" and getattr(self, "login_split", None) is not None:
+            self.login_page(getattr(self, "_login_registering", False))
+
+    def _apply_battle_skin(self, difficulty, skin):
+        """Persist one difficulty's battle skin and refresh if it's on screen."""
+        try:
+            self.skin_prefs.select("battle", skin, difficulty=difficulty)
+        except DataError as exc:
+            messagebox.showerror(self.tr("保存失败"), self.tr(str(exc)), parent=self.root)
+            return
+        battle = getattr(self, "battle", None)
+        if (
+            battle is not None
+            and getattr(battle, "difficulty", None) == difficulty
+            and getattr(battle, "portrait", None) is not None
+            and battle.portrait.winfo_exists()
+        ):
+            battle.show_expression("normal")
+
     def settings(self):
         self._nav_key = "settings"
         self.clear(self.tr("设置"), show_heading=False)
@@ -1800,6 +2074,24 @@ class Application:
                 style="Card.TLabel",
             )
         ).pack(fill="x", pady=(T.px(T.SPACE_3), 0))
+
+        achievements_card = ttk.LabelFrame(
+            self.body, text=self.tr("成就"), padding=pad
+        )
+        achievements_card.pack(fill="x", pady=gap)
+        fit(
+            ttk.Label(
+                achievements_card,
+                text=self.tr("重置当前账号的成就与统计，用于重新演示解锁流程。访客无需重置。"),
+                style="Card.TLabel",
+            )
+        ).pack(fill="x")
+        ttk.Button(
+            achievements_card,
+            text=self.tr("重置本账号成就"),
+            command=self._reset_achievements,
+            style="Accent.TButton",
+        ).pack(anchor="w", pady=(T.px(T.SPACE_2), 0))
 
         motion = ttk.LabelFrame(self.body, text=self.tr("动画效果"), padding=pad)
         motion.pack(fill="x", pady=gap)
@@ -1897,12 +2189,49 @@ class Application:
         self.body.configure(padding=(12, 10) if self.display["compact"] else (24, 20))
         self.settings()
 
+    def _reset_achievements(self):
+        """Clear the signed-in account's badges/stats (demo helper)."""
+        from .achievements import AchievementStore
+
+        if not self.check_session():
+            return
+        if not self.user:
+            messagebox.showinfo(
+                self.tr("重置成就"),
+                self.tr("访客没有成就存档，请登录账号后再试。"),
+                parent=self.root,
+            )
+            return
+        name = self.user.get("name") or self.user.get("id") or ""
+        if not messagebox.askyesno(
+            self.tr("重置成就"),
+            self.tr("确定清空账号 {0} 的所有成就和统计吗？此操作不可撤销。", name),
+            parent=self.root,
+        ):
+            return
+        try:
+            store = AchievementStore(AchievementStore.path_for(self))
+            cleared = store.reset()
+        except (ValueError, OSError) as exc:
+            messagebox.showerror(self.tr("重置失败"), str(exc), parent=self.root)
+            return
+        messagebox.showinfo(
+            self.tr("重置成就"),
+            self.tr("已清空 {0} 枚成就，账号 {1} 的成就已重置。", cleared, name),
+            parent=self.root,
+        )
+
     def save_language(self):
         try:
             self.tr.set_language(self.language.get())
             if getattr(self, "motion_choice", None) is not None:
-                self.tr.set_motion(bool(self.motion_choice.get()))
-                self.motion.enabled = bool(self.motion_choice.get())
+                enabled = bool(self.motion_choice.get())
+                self.tr.set_motion(enabled)
+                self.motion.enabled = enabled
+                if not enabled:
+                    # Drop queued frames and any in-flight overlay so turning
+                    # motion off mid-animation stops it immediately.
+                    self.motion.cancel()
         except (ValueError, DataError) as exc:
             messagebox.showerror(self.tr("保存失败"), self.tr(str(exc)), parent=self.root)
             return
@@ -1920,6 +2249,7 @@ class Application:
 
     def _control_wheel(self, event):
         if not self.display.get("wheel_controls", False):
+            self._scroll_page_wheel(event)
             return "break"
         widget = event.widget
         direction = -1 if getattr(event, "delta", 0) > 0 or getattr(event, "num", None) == 4 else 1
@@ -1944,13 +2274,26 @@ class Application:
                 pass
         return "break"
 
+    def _scroll_page_wheel(self, event):
+        delta = getattr(event, "delta", 0)
+        previous = self._page_wheel_remainder
+        if previous * delta < 0:
+            previous = 0
+        accumulated = previous + delta
+        steps = int(accumulated / 120)
+        self._page_wheel_remainder = accumulated - steps * 120
+        if steps:
+            self.canvas.yview_scroll(-steps, "units")
+        return "break"
+
     def _page_wheel(self, event):
-        if isinstance(
-            event.widget,
-            (ttk.Combobox, ttk.Spinbox, tk.Text, ttk.Treeview, modern.Dropdown, modern.Stepper),
+        if isinstance(event.widget, (tk.Text, ttk.Treeview)):
+            return
+        if self.display.get("wheel_controls", False) and isinstance(
+            event.widget, (ttk.Combobox, ttk.Spinbox, modern.Dropdown, modern.Stepper)
         ):
             return
-        self.canvas.yview_scroll(-int(event.delta / 120), "units")
+        return self._scroll_page_wheel(event)
 
     def _action_dock(self):
         self.action_dock = ttk.Frame(
@@ -1959,16 +2302,50 @@ class Application:
         self.action_dock.pack(side="bottom", fill="x", before=self.canvas)
         return self.action_dock
 
+    def _battle_header(self):
+        """Fixed strip directly under the chrome rule for battle status.
+
+        Packed into ``outer`` before the scrolling canvas (like the action
+        dock) so its content — the augment banner and both health bars —
+        stays pinned while only the question area scrolls. Handlers that
+        need fixed placement (e.g. the floating ×3 label) anchor here.
+        """
+        header = ttk.Frame(
+            self.outer, style="App.TFrame", padding=(T.px(T.SPACE_4), T.px(T.SPACE_1))
+        )
+        header.pack(side="top", fill="x", before=self.canvas)
+        self.battle_header = header
+        return header
+
     def clear(self, title, heading=True, show_heading=True, back=None):
         if self._login_after:
             self.root.after_cancel(self._login_after)
             self._login_after = None
+        if getattr(self, "_pep_after", None) is not None:
+            try:
+                self.root.after_cancel(self._pep_after)
+            except (tk.TclError, ValueError):
+                pass
+            self._pep_after = None
         self.motion.cancel()
-        if getattr(self, "action_dock", None) is not None:
-            self.action_dock.destroy()
+        # Reset any battle-specific body width so other pages keep the normal
+        # PAGE_PAD inset. Battle round() opts back in after clear().
+        if (
+            getattr(self, "_body_side_pad", None) != T.px(T.PAGE_PAD)
+            or getattr(self, "_body_match_outer", False)
+        ):
+            self.set_body_side_pad(T.PAGE_PAD, match_outer=False)
+        dock = getattr(self, "action_dock", None)
+        if dock is not None:
+            dock.destroy()
             self.action_dock = None
-        if getattr(self, "quiz_progress_header", None) is not None:
-            self.quiz_progress_header.destroy()
+        header = getattr(self, "battle_header", None)
+        if header is not None:
+            header.destroy()
+            self.battle_header = None
+        progress = getattr(self, "quiz_progress_header", None)
+        if progress is not None:
+            progress.destroy()
             self.quiz_progress_header = None
         self._unbind_quiz_keys()
         self._show_scroll_shell(True)
@@ -1978,6 +2355,7 @@ class Application:
         self.login_split = None
         self.home_rail = None
         self.canvas.yview_moveto(0)
+        self._page_wheel_remainder = 0
         if heading:
             self._set_chrome(True)
             self.body.configure(padding=(T.px(T.PAGE_PAD), T.px(T.SPACE_4)))
@@ -2006,7 +2384,10 @@ class Application:
                     justify="left",
                 ).pack(fill="x", pady=(0, 8))
             self._paint_nav()
-            self.motion.fade_in(self.outer)
+            # Soft fade-in: ease a background-tinted layer over the content
+            # viewport from opaque to clear so only the page fades in, while
+            # the navigation / chrome / window background stay put.
+            self.motion.fade_overlay(self.canvas, duration=380)
 
     def _on_root_resize(self, event):
         if event.widget is not self.root:
@@ -2942,6 +3323,30 @@ class Application:
         )
         self._home_mascot.pack()
         self._home_mascot.bind("<Configure>", self._draw_home_mascot)
+        self.skin_button = tk.Button(
+            reply_panel.content, text="👕", font=("Segoe UI Emoji", 16),
+            command=self.skin_settings, bg=T.AI_REPLY_BG, fg=T.TEXT_SECONDARY,
+            activebackground=T.AI_REPLY_BG, activeforeground=T.PRIMARY,
+            relief="flat", bd=0, cursor="hand2", padx=T.px(4), pady=T.px(2),
+            highlightthickness=1, highlightbackground=T.AI_REPLY_BG,
+            highlightcolor=T.PRIMARY,
+        )
+        self.skin_button.place(relx=1, x=-T.px(2), y=T.px(2), anchor="ne")
+
+        # Idle animation: the assistant mascot paces gently while waiting.
+        # Owns its own after() handle so Motion.cancel() on page changes does
+        # not stop it; it stops itself when the canvas is destroyed.
+        self._mascot_walker = MascotWalker(
+            self._home_mascot,
+            self._home_skin_path(),
+            motion=self.motion,
+            travel=0.40,
+            top_pad=T.px(48),
+            language=self.tr.language,
+        )
+        # Occasionally refresh the bubble with a short AI-generated nudge;
+        # without an API key it silently falls back to the built-in line pool.
+        self._schedule_pep_talk(first=True)
         self._home_ai_hint = tk.Label(
             group,
             text=self.tr("问我任何学习问题，我会给出简短提示。"),
@@ -2990,7 +3395,12 @@ class Application:
         return "break"
 
     def _resize_home_idle(self, event):
-        """Fit portrait + caption into the reply area, dropping the caption if tight."""
+        """Fit the walking mascot + caption into the reply area.
+
+        The canvas spans the reply box width (so the mascot has room to pace)
+        while its height follows the available vertical room. The top strip is
+        reserved for the speech bubble. The caption is dropped if it gets tight.
+        """
         canvas = getattr(self, "_home_mascot", None)
         hint = getattr(self, "_home_ai_hint", None)
         if canvas is None or hint is None or not canvas.winfo_exists():
@@ -3008,28 +3418,47 @@ class Application:
         elif not keep_hint and hint.winfo_manager():
             hint.pack_forget()
         room = available - (hint_height if keep_hint else 0)
-        size = max(min(limit, room, T.px(320)), T.px(64))
-        if abs(int(canvas.cget("width")) - size) > 1:
-            canvas.configure(width=size, height=size)
+        # Width fills the box (capped so the character never looks lost); the
+        # portrait itself is sized by vertical room and drawn near the bottom.
+        width = max(min(limit, T.px(760)), T.px(140))
+        height = max(min(room, T.px(360)), T.px(112))
+        if (abs(int(canvas.cget("width")) - width) > 1
+                or abs(int(canvas.cget("height")) - height) > 1):
+            canvas.configure(width=width, height=height)
         self._draw_home_mascot()
 
+    def _home_skin_path(self):
+        """Resolved mascot image for the selected home skin (with fallback)."""
+        selected = self.skin_prefs.selected(self.project_root, "home")
+        path = skin_store.asset_path(self.project_root, "home", selected, "mascot")
+        return path or (self.project_root / "AI-assistant-icon.png")
+
     def _home_mascot_base(self):
-        base = self.__dict__.get("_mascot_base")
-        if base is None:
-            try:
-                base = tk.PhotoImage(
-                    master=self.root,
-                    file=str(self.project_root / "AI-assistant-icon.png"),
-                )
-            except (tk.TclError, OSError):
-                base = False
-            self._mascot_base = base
-        return base or None
+        path = self._home_skin_path()
+        cached = self.__dict__.get("_mascot_base")
+        if cached is not None and cached[0] == path:
+            return cached[1] or None
+        base = None
+        try:
+            base = tk.PhotoImage(master=self.root, file=str(path))
+        except (tk.TclError, OSError):
+            base = None
+        self._mascot_base = (path, base)
+        return base
 
     def _draw_home_mascot(self, _event=None):
-        """Scale the Q-version portrait to the room the card actually has."""
+        """Scale the Q-version portrait to the room the card actually has.
+
+        The assistant mascot paces gently via :class:`MascotWalker`; the old
+        static, centred drawing is kept as a fallback when no walker exists.
+        """
         canvas = getattr(self, "_home_mascot", None)
         if canvas is None or not canvas.winfo_exists():
+            return
+        walker = getattr(self, "_mascot_walker", None)
+        if walker is not None:
+            walker.redraw()
+            walker.start()
             return
         width, height = canvas.winfo_width(), canvas.winfo_height()
         canvas.delete("all")
@@ -3064,7 +3493,10 @@ class Application:
             return
         wants_answer = bool(text.strip())
         showing_answer = bool(answer.winfo_manager())
+        walker = getattr(self, "_mascot_walker", None)
         if wants_answer and not showing_answer:
+            if walker is not None:
+                walker.stop()
             idle.pack_forget()
             answer.pack(fill="both", expand=True)
         elif not wants_answer and showing_answer:
@@ -3112,6 +3544,80 @@ class Application:
                     button.state(["!disabled"])
 
             self.root.after(0, finish)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    # -- mascot pep talk (occasional AI-generated nudge) ------------------
+    def _schedule_pep_talk(self, first=False):
+        """Schedule the next mascot nudge; silent no-op without an API key."""
+        job = getattr(self, "_pep_after", None)
+        if job is not None:
+            try:
+                self.root.after_cancel(job)
+            except (tk.TclError, ValueError):
+                pass
+        self._pep_after = None
+        # First line appears shortly after landing home; later ones are sparse
+        # (roughly every 1.5-2 minutes) so the API is not hammered.
+        delay_ms = 9000 if first else (90000 + (int(time.time()) % 45000))
+        try:
+            self._pep_after = self.root.after(delay_ms, self._mascot_pep_talk)
+        except tk.TclError:
+            pass
+
+    def _mascot_pep_talk(self):
+        """Fetch one short nudge in the background and feed it to the bubble.
+
+        Falls back silently to the built-in line pool when the API is not
+        configured, motion is off, the page changed, or the request fails.
+        """
+        self._pep_after = None
+        walker = getattr(self, "_mascot_walker", None)
+        if (walker is None or not self.motion.active()
+                or not self._home_mascot.winfo_exists()):
+            return
+        try:
+            if not self.ai_settings.load().get("api_key"):
+                return
+        except (ValueError, OSError):
+            return
+
+        language = self.tr.language
+        prompt = (
+            "用一句话催我继续学习，温暖俏皮一点，不超过20个字，只输出这句话。"
+            if language == "zh"
+            else "Give me one short, warm, playful nudge to keep studying, "
+                 "under 12 words. Output only that line."
+        )
+
+        def worker():
+            try:
+                raw = self.ai_assistant.ask(prompt, language)
+                line = next((s.strip() for s in raw.splitlines() if s.strip()), "")
+            except (ValueError, OSError):
+                line = ""
+
+            def inject():
+                current = getattr(self, "_mascot_walker", None)
+                home = getattr(self, "_home_mascot", None)
+                still_home = (
+                    current is walker
+                    and home is not None
+                    and home.winfo_exists()
+                    and self.motion.active()
+                )
+                if line and still_home:
+                    walker.inject_line(line[:60], language)
+                # Only re-arm while still on the home page. Otherwise the
+                # worker started before clear() cancelled the timer and would
+                # leave an orphaned retry firing ~90s later on another page.
+                if still_home:
+                    self._schedule_pep_talk()
+
+            try:
+                self.root.after(0, inject)
+            except tk.TclError:
+                pass
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -4053,9 +4559,10 @@ class Application:
 
     def _difficulty_label(self, value):
         """Translate a difficulty data value for display without changing data."""
-        if value == self.tr("全部"):
+        key = value or ""
+        if key == self.tr("全部"):
             return self.tr("全部")
-        return self.tr(DIFFICULTY_LABELS.get(value, value))
+        return self.tr(DIFFICULTY_LABELS.get(key, key))
 
     def refresh_difficulties(self, event=None):
         subset = [
@@ -4069,7 +4576,7 @@ class Application:
             {q.difficulty for q in subset},
             key=lambda name: (order.get(name, 99), name),
         )
-        self.difficulty_box["values"] = values
+        cast(Any, self.difficulty_box)["values"] = values
         self.difficulty.set(self.tr("全部"))
         self._rebuild_difficulty_chips(values)
         self.show_count()
@@ -4295,7 +4802,7 @@ class Application:
             self._fit_image(label, base, host, max_width)
             # Keep the copy that is actually on screen: the 3x source only has
             # to survive as long as its label does.
-            self.images.append(label._fit_photo)
+            self.images.append(getattr(label, "_fit_photo"))
             if not value and fallback_subject:
                 ttk.Label(frame, text=self.tr("学科示意图"), style="Muted.TLabel").pack(anchor="w")
         except (tk.TclError, OSError, ValueError) as exc:
@@ -4328,8 +4835,9 @@ class Application:
             if factor == state["factor"] or not label.winfo_exists():
                 return
             state["factor"] = factor
-            label._fit_photo = base.subsample(factor) if factor > 1 else base
-            label.configure(image=label._fit_photo)
+            photo = base.subsample(factor) if factor > 1 else base
+            setattr(label, "_fit_photo", photo)
+            label.configure(image=photo)
 
         apply()
         host.bind("<Configure>", lambda _event: apply(), add="+")
@@ -4362,6 +4870,7 @@ class Application:
         box.pack(fill="x", pady=4)
         for index, option in enumerate(q.options):
             text = f"{option_label(index)}: {option}"
+            card = box  # non-selectable options render straight into the options box
             if selectable:
                 card = tk.Frame(
                     box,
@@ -4469,6 +4978,8 @@ class Application:
 
     def show_question(self):
         engine = self.engine
+        if engine is None:
+            return
         mode = self.tr("错题复习") if engine.review else self.tr("练习")
         total = len(engine.questions)
         self._choices_locked = False
@@ -4557,15 +5068,16 @@ class Application:
             bd=0,
             takefocus=0,
         )
+        photo_holder: list[object] = []
         try:
             photo = tk.PhotoImage(
                 master=self.root, file=str(self.project_root / "AI-assistant-icon.png")
             )
             target = max(24, size - T.px(T.SPACE_2))
             factor = max(1, (max(photo.width(), photo.height()) + target - 1) // target)
-            canvas._photo = photo.subsample(factor)
+            photo_holder.append(photo.subsample(factor))
         except (tk.TclError, OSError):
-            canvas._photo = None
+            pass
 
         def draw(_event=None):
             side = min(canvas.winfo_width(), canvas.winfo_height())
@@ -4582,8 +5094,8 @@ class Application:
                 outline=T.PRIMARY,
                 width=T.px(T.HAIRLINE),
             )
-            if canvas._photo is not None:
-                canvas.create_image(side // 2, side // 2, image=canvas._photo)
+            if photo_holder:
+                canvas.create_image(side // 2, side // 2, image=photo_holder[0])
             else:
                 canvas.create_text(
                     side // 2,
@@ -4679,8 +5191,9 @@ class Application:
         sheet = self.project_root / "assets/battle/expressions.png"
         if not sheet.exists():
             return
-        self.quiz_avatar.image = portrait_image(self.root, sheet, state, T.px(80))
-        self.quiz_avatar.configure(image=self.quiz_avatar.image)
+        avatar_image = portrait_image(self.root, sheet, state, T.px(80))
+        setattr(self.quiz_avatar, "image", avatar_image)
+        self.quiz_avatar.configure(image=avatar_image)
 
     def ask_current_question_ai(self):
         if not self.engine:
@@ -4763,24 +5276,28 @@ class Application:
             button.configure(text=self.tr("请先选择答案"))
 
     def submit(self):
-        if self.engine and getattr(self, "deadline", None) and time.monotonic() >= self.deadline:
-            self._tick_timer(self.engine)
+        engine = self.engine
+        if engine is None:
+            return
+        deadline = getattr(self, "deadline", None)
+        if deadline is not None and time.monotonic() >= deadline:
+            self._tick_timer(engine)
             return
         if not self.check_session():
             return
         if getattr(self, "_submit_busy", False) or getattr(self, "_choices_locked", False):
             return
         try:
-            correct = self.engine.submit(self.answer.get())
+            correct = engine.submit(self.answer.get())
         except ValueError as exc:
             messagebox.showerror(self.tr("提交失败"), self.tr(str(exc)), parent=self.root)
             return
-        if self.engine.activity_warning:
+        if engine.activity_warning:
             messagebox.showwarning(
                 self.tr("学习计划未更新"),
                 self.tr(
                     "答案和成绩已保存，但每日进度保存失败：{0}",
-                    self.engine.activity_warning,
+                    engine.activity_warning,
                 ),
                 parent=self.root,
             )
@@ -4790,7 +5307,7 @@ class Application:
         for widget in self.option_buttons:
             widget.state(["disabled"])
         self._paint_options(submitted=True, correct=correct)
-        q = self.engine.current
+        q = engine.current
         self._quiz_expression("correct" if correct else "wrong")
         encouragement = (
             self.tr("这题你抓住重点了！")
@@ -4807,7 +5324,7 @@ class Application:
         )
         next_label = (
             self.tr("查看结果")
-            if self.engine.index == len(self.engine.questions) - 1
+            if engine.index == len(engine.questions) - 1
             else self.tr("继续")
         )
 
@@ -4825,12 +5342,15 @@ class Application:
         self.motion.submit_feedback(self.submit_button, correct, finish)
 
     def advance(self):
-        if self.engine.complete:
+        engine = self.engine
+        if engine is None:
+            return
+        if engine.complete:
             self.motion.circle_transition(self.outer, self.results)
             return
 
         def go():
-            self.engine.next_question()
+            engine.next_question()
             self.show_question()
 
         if self.motion.active():
@@ -4840,14 +5360,17 @@ class Application:
             go()
 
     def results(self):
-        result = self.engine.result()
+        engine = self.engine
+        if engine is None:
+            return
+        result = engine.result()
         self.timer_label.configure(text="")
         self.clear(self.tr("练习完成"), show_heading=False)
-        if getattr(self.engine, "timed_out", False):
+        if getattr(engine, "timed_out", False):
             self.label(
                 self.tr(
                     "本轮已超时，未答 {0} 题计为未得分；未答题不会加入错题本。",
-                    self.engine.unanswered,
+                    engine.unanswered,
                 )
             )
         stats = ttk.Frame(self.body, style="App.TFrame")
@@ -4872,7 +5395,7 @@ class Application:
             advice = self.tr("根据本轮正确率，建议先复习错题再开始下一组练习。")
         self.label(advice, "Muted.TLabel")
         self.label(self.tr("成绩已保存。每题 1 分，错题复习答对后从错题本移除。"), "Muted.TLabel")
-        subjects = ", ".join(sorted({q.subject for q in self.engine.questions}))
+        subjects = ", ".join(sorted({q.subject for q in engine.questions}))
         self.label(self.tr("本轮学科：{0}", subjects), "Muted.TLabel")
         self.engine = None
         actions = ttk.Frame(self.body, style="App.TFrame")

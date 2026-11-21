@@ -1,5 +1,6 @@
 """Bounded, Tk-interpreter-local image cache with file-change invalidation."""
 
+import base64
 import tkinter as tk
 from collections import OrderedDict
 from pathlib import Path
@@ -21,7 +22,17 @@ def source_image(root, path):
     stamp = path.stat()
     key = (str(path), stamp.st_mtime_ns, stamp.st_size)
     cache = root.__dict__.setdefault("_source_images", OrderedDict())
-    return _remember(cache, key, lambda: tk.PhotoImage(master=root, file=str(path)), 16)
+
+    def build():
+        # Load from memory so Tk never keeps a file handle open. On Windows
+        # that handle would otherwise outlive the root and block temp cleanup.
+        try:
+            data = base64.b64encode(path.read_bytes()).decode("ascii")
+            return tk.PhotoImage(master=root, data=data)
+        except tk.TclError:
+            return tk.PhotoImage(master=root, file=str(path))
+
+    return _remember(cache, key, build, 16)
 
 
 def portrait_image(root, path, state, target, sheet=True):

@@ -54,7 +54,7 @@ class PersonalQuestionImportTests(unittest.TestCase):
                     self.record(),
                     self.record("MINE001", "Different"),
                     self.record("MINE002"),
-                    self.record("ENG001", "Public collision"),
+                    self.record("ENG002", "Public collision"),
                     {**self.record("BAD001"), "answer": "Missing"},
                 ]
             ),

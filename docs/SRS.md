@@ -6,7 +6,7 @@ Updated: 2026-11-13. English first, followed by Chinese.
 
 ### Authoritative requirements
 
-[specification.md](../specification.md) is the complete English-first bilingual SRS. Matching requirement IDs are used in both languages. This file explains implementation decisions and maps requirements to modules; it does not maintain a separate competing specification. The original guide is preserved in [the archive](archive/SRS_GUIDE_PRE_BILINGUAL_20261113.md).
+[specification.md](specification.md) is the complete English-first bilingual SRS. Matching requirement IDs are used in both languages. This file explains implementation decisions and maps requirements to modules; it does not maintain a separate competing specification. The original guide is preserved in [the archive](archive/SRS_GUIDE_PRE_BILINGUAL_20261113.md).
 
 ### Implementation decisions
 
@@ -53,13 +53,13 @@ Updated: 2026-11-13. English first, followed by Chinese.
 
 Run `python -m unittest discover -s tests -v`, `python -m ruff check .` and `python -m compileall -q learning_platform tests`. Tests use temporary profiles and mocked networking where appropriate. Real API checks are reported separately and do not establish general model accuracy. Local files are not protected from someone with filesystem access, atomic writes do not provide multiprocess locking, and cancelled image edits may leave unused resources.
 
-See [README](../README.md), [test cases](TEST_CASES.md), [test report](TEST_REPORT.md), [development conventions](DEVELOPMENT.md), [battle rules](BATTLE.md), [import rules](QUESTION_BANK_IMPORT.md), [V2 integration history](V2_INTEGRATION.md) and [changelog](CHANGELOG.md).
+See [README](README.md), [test cases](TEST_CASES.md), [test report](TEST_REPORT.md), [development conventions](DEVELOPMENT.md), [battle rules](BATTLE.md), [import rules](QUESTION_BANK_IMPORT.md), [V2 integration history](V2_INTEGRATION.md) and [changelog](CHANGELOG.md).
 
 ## 中文
 
 ### 权威需求
 
-[specification.md](../specification.md) 是完整的英文优先双语 SRS，两种语言使用对应需求 ID。本文件记录实现决策及模块对应，不维护另一份有冲突的完整规格。原说明保存在[归档](archive/SRS_GUIDE_PRE_BILINGUAL_20261113.md)。
+[specification.md](specification.md) 是完整的英文优先双语 SRS，两种语言使用对应需求 ID。本文件记录实现决策及模块对应，不维护另一份有冲突的完整规格。原说明保存在[归档](archive/SRS_GUIDE_PRE_BILINGUAL_20261113.md)。
 
 ### 实现决策
 
@@ -106,4 +106,4 @@ See [README](../README.md), [test cases](TEST_CASES.md), [test report](TEST_REPO
 
 运行 `python -m unittest discover -s tests -v`、`python -m ruff check .` 及 `python -m compileall -q learning_platform tests`。测试使用临时账户和适当的模拟网络；真实联调单独记录，不代表普遍正确率。本地文件不防直接访问，原子写入不是多进程锁，取消图片编辑可留下未引用文件。
 
-参考 [README](../README.md)、[测试用例](TEST_CASES.md)、[测试报告](TEST_REPORT.md)、[开发规范](DEVELOPMENT.md)、[对战](BATTLE.md)、[导入](QUESTION_BANK_IMPORT.md)、[整合历史](V2_INTEGRATION.md)和[变更](CHANGELOG.md)。
+参考 [README](README.md)、[测试用例](TEST_CASES.md)、[测试报告](TEST_REPORT.md)、[开发规范](DEVELOPMENT.md)、[对战](BATTLE.md)、[导入](QUESTION_BANK_IMPORT.md)、[整合历史](V2_INTEGRATION.md)和[变更](CHANGELOG.md)。

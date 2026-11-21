@@ -17,6 +17,7 @@ from learning_platform.models import option_label
 from learning_platform.repositories import ProgressRepository, QuestionRepository
 from learning_platform.services import QuizEngine
 from learning_platform.storage import DataError
+from tests import fresh_tk_root
 
 
 def seed_admin(auth):
@@ -220,11 +221,10 @@ class RoleGuiTests(unittest.TestCase):
         shutil.copytree(ROOT / "data/questions", self.folder / "data/questions")
         shutil.copytree(ROOT / "assets", self.folder / "assets")
         try:
-            self.root = tk.Tk()
+            self.root = fresh_tk_root()
         except tk.TclError as exc:
             self.skipTest(str(exc))
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
         self.app = Application(self.root, project_root=self.folder)
         self.admin = seed_admin(self.app.auth)
         self.student = self.app.auth.register("Student", "Secret2", "Secret2")
@@ -437,7 +437,7 @@ class RoleGuiTests(unittest.TestCase):
         args, kwargs = mocked.call_args
         self.assertEqual(args[1] if len(args) > 1 else kwargs["language"], "en")
         # Framing instructions are English; the stem/options are question-bank
-        # content and may legitimately contain Chinese (ENG001 does).
+        # content and are never translated by the UI i18n layer.
         lines = args[0].splitlines()
         self.assertEqual(lines[0], "Help me understand this multiple-choice question.")
         self.assertTrue(lines[1].startswith("Question: "))

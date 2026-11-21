@@ -4,7 +4,7 @@ A configurable study companion with quizzes, personal question banks, guided hel
 
 **Quiz · Configure · Learn together**
 
-Updated: 2026-11-13. English is presented first; an equivalent Chinese guide follows. This guide describes the current V2 implementation. Earlier documentation is retained in [the README archive](docs/archive/README_PRE_BILINGUAL_20261113.md); historical statements do not override this guide.
+Updated: 2026-11-19. English is presented first; an equivalent Chinese guide follows. This guide describes the current V2 implementation. Earlier documentation is retained in [the README archive](archive/README_PRE_BILINGUAL_20261113.md); historical statements do not override this guide.
 
 ## English
 
@@ -62,10 +62,10 @@ Administrators can choose **All personal banks** and select an owner, or select 
 
 Public and personal imports use JSON/CSV selection, validation, preview and explicit confirmation. Invalid rows are identified; duplicate IDs/content are skipped. Confirmation rechecks permissions, the target bank and current duplicates before writing. The English preview uses **Validation passed**. Files are limited to 5 MB and 1,000 records.
 
-- [JSON test file](examples/import_test_json.json) and [CSV test file](examples/import_test_csv.csv) contain three different questions each and can be imported consecutively.
+- [JSON test file](../examples/import_test_json.json) and [CSV test file](../examples/import_test_csv.csv) contain three different questions each and can be imported consecutively.
 - Repeat imports safely skip existing questions.
 - Wrong-question CSV exports can be imported as review questions. Compatible legacy exports with a correct answer and a different last answer are accepted as two-option questions.
-- See [import rules](docs/QUESTION_BANK_IMPORT.md) for templates, field definitions and duplicate handling.
+- See [import rules](QUESTION_BANK_IMPORT.md) for templates, field definitions and duplicate handling.
 
 The editor accepts PNG/GIF/PPM/PGM images, checks decoding, and limits uploads to 10 MB and 16 million pixels. Convert JPEG/WebP to PNG before editor upload. Files are copied to unique names under `assets/uploads/`; source files are not moved. Removing an image reference does not delete a file that other questions or backups may need.
 
@@ -103,7 +103,7 @@ The learning journal supports likes and notes on **session records**, inclusive 
 
 Configure the HTTPS endpoint, model and protected API key in Settings. The home card offers a single-turn study question. In a normal quiz, **Ask Big Whale** provides a guiding hint on the first request and an explanation with the answer on the second. Failed requests may be retried. The companion uses thinking/correct/incorrect expressions and local encouragement after submission; the bottom answer feedback does not call an API.
 
-Normal-quiz assistance sends text only. The first hint does not include the answer key; the second request includes the reference answer and explanation. It does not send images, account credentials, profiles or learning history. Normal assistance limits input to 2,500 characters and output to 320 tokens. See [assistant prompts](docs/AI_ASSISTANT_PROMPT.md). API use requires connectivity and may incur provider charges; core practice remains offline.
+Normal-quiz assistance sends text only. The first hint does not include the answer key; the second request includes the reference answer and explanation. It does not send images, account credentials, profiles or learning history. Normal assistance limits input to 2,500 characters and output to 320 tokens. See [assistant prompts](AI_ASSISTANT_PROMPT.md). API use requires connectivity and may incur provider charges; core practice remains offline.
 
 ### 7. Quiz battles
 
@@ -113,7 +113,7 @@ Correct answers earn 100 points. Correct responses within 5/10/15/20/30 seconds 
 
 **Local** is a labelled probability simulation. **API** submits a structured choice and concise decision summaries. Reading, comparing options, and choosing/checking appear as replacing activity stages, not a live transcript of internal reasoning. Choices and saved summaries are revealed after both sides finish; no second request invents a retrospective rationale. API failures, invalid decisions and late responses void the round with no points or HP changes and allow retry.
 
-API battles send the question text, options and any attached stem/option images, but not the answer key or explanation. Official DeepSeek image requests use `deepseek-flash`; text requests retain the configured model. Custom endpoints need a compatible vision model. Images must stay within the project and use PNG/JPEG/GIF/WebP, with limits of 8 MiB per image and 16 MiB total. Structured output is capped at 800 tokens. See [battle details](docs/BATTLE.md). Skill-card selection and online multiplayer are not implemented.
+API battles send the question text, options and any attached stem/option images, but not the answer key or explanation. Official DeepSeek image requests use `deepseek-flash`; text requests retain the configured model. Custom endpoints need a compatible vision model. Images must stay within the project and use PNG/JPEG/GIF/WebP, with limits of 8 MiB per image and 16 MiB total. Structured output is capped at 800 tokens. See [battle details](BATTLE.md). Skill-card selection and online multiplayer are not implemented.
 
 ### 8. Export reports
 
@@ -148,7 +148,7 @@ python -m ruff check .
 python -m compileall -q learning_platform tests
 ```
 
-Tests use temporary data. GUI tests need Tk and a display. Ruff is a development tool and is not required to run the app. See the [test report](docs/TEST_REPORT.md), [test cases](docs/TEST_CASES.md), [development guide](docs/DEVELOPMENT.md), [design guide](DESIGN.md), [SRS](specification.md), [requirement mapping](docs/SRS.md), [integration history](docs/V2_INTEGRATION.md) and [changelog](docs/CHANGELOG.md).
+Tests use temporary data. GUI tests need Tk and a display. Ruff is a development tool and is not required to run the app. See the [test report](TEST_REPORT.md), [test cases](TEST_CASES.md), [development guide](DEVELOPMENT.md), [design guide](DESIGN.md), [SRS](specification.md), [requirement mapping](SRS.md), [integration history](V2_INTEGRATION.md) and [changelog](CHANGELOG.md).
 
 ### 11. Limits and project history
 
@@ -212,10 +212,10 @@ python main.py
 
 公共和个人导入均经过选择 JSON/CSV、校验、预览、明确确认。无效行显示原因，重复 ID/内容跳过；确认时重新检查权限、目标题库及当前重复项。英文界面显示 `Validation passed`。文件限制 5 MB、1000 条。
 
-- [JSON 测试文件](examples/import_test_json.json) 与 [CSV 测试文件](examples/import_test_csv.csv) 各含 3 道不同题目，可连续导入。
+- [JSON 测试文件](../examples/import_test_json.json) 与 [CSV 测试文件](../examples/import_test_csv.csv) 各含 3 道不同题目，可连续导入。
 - 重复导入安全跳过。
 - 错题 CSV 可导入为复习题；兼容旧版包含正确答案及不同最近错误答案的双选项转换。
-- 模板、字段和去重规则见[题库导入说明](docs/QUESTION_BANK_IMPORT.md)。
+- 模板、字段和去重规则见[题库导入说明](QUESTION_BANK_IMPORT.md)。
 
 编辑器接受 PNG/GIF/PPM/PGM，校验解码并限制 10 MB、1600 万像素；JPEG/WebP 上传前需转为 PNG。图片复制到 `assets/uploads/` 的独立名称，不移动原图；移除引用不会自动删除其他题目或备份可能使用的文件。
 
@@ -233,7 +233,7 @@ JSON 示例见上方英文部分，同一格式适用于两种语言。公共题
 
 在设置中配置 HTTPS 地址、模型和受保护的 API Key。首页支持单轮学习提问；普通答题页第一次“问问大肥鱼”给引导提示，第二次给答案及解析，失败可重试。头像随思考、答对、答错变化；提交后的鼓励及底部反馈使用本地内容，不调用 API。
 
-普通伴学仅传文字。第一次不含答案键，第二次含参考答案与解析；不发送图片、账户凭据、个人资料或历史记录。输入上限 2500 字符，输出 320 tokens；控制词见[助手说明](docs/AI_ASSISTANT_PROMPT.md)。API 需要联网且可能产生费用，核心练习无需联网。
+普通伴学仅传文字。第一次不含答案键，第二次含参考答案与解析；不发送图片、账户凭据、个人资料或历史记录。输入上限 2500 字符，输出 320 tokens；控制词见[助手说明](AI_ASSISTANT_PROMPT.md)。API 需要联网且可能产生费用，核心练习无需联网。
 
 ### 7. 答题对战
 
@@ -243,7 +243,7 @@ JSON 示例见上方英文部分，同一格式适用于两种语言。公共题
 
 Local 明确是概率模拟；API 返回结构化选项及简短决策摘要。读题、比较选项、选择检查三段提示依次替换，不代表真实内部思维。双方结束后公开选择与已保存摘要，不在结算后另外生成理由。接口失败、无效决策和迟到响应使当轮作废，不计分、不扣血，可重试。
 
-API 对战发送题干、选项及对应图片，不发送答案键或解析。官方 DeepSeek 图片请求使用 `deepseek-flash`，纯文字保留配置模型；自定义接口需要视觉模型。仅接受项目内图片，格式 PNG/JPEG/GIF/WebP，单图 8 MiB、总计 16 MiB；结构化输出 800 tokens。详见[对战说明](docs/BATTLE.md)。技能卡选择和在线多人对战尚未实现。
+API 对战发送题干、选项及对应图片，不发送答案键或解析。官方 DeepSeek 图片请求使用 `deepseek-flash`，纯文字保留配置模型；自定义接口需要视觉模型。仅接受项目内图片，格式 PNG/JPEG/GIF/WebP，单图 8 MiB、总计 16 MiB；结构化输出 800 tokens。详见[对战说明](BATTLE.md)。技能卡选择和在线多人对战尚未实现。
 
 ### 8. 导出报告
 
@@ -267,10 +267,20 @@ python -m ruff check .
 python -m compileall -q learning_platform tests
 ```
 
-测试使用临时数据，GUI 测试需要 Tk 与图形桌面；运行软件无需 Ruff。参考[测试报告](docs/TEST_REPORT.md)、[测试用例](docs/TEST_CASES.md)、[开发规范](docs/DEVELOPMENT.md)、[视觉规范](DESIGN.md)、[主 SRS](specification.md)、[需求对应](docs/SRS.md)、[整合历史](docs/V2_INTEGRATION.md)及[变更记录](docs/CHANGELOG.md)。
+测试使用临时数据，GUI 测试需要 Tk 与图形桌面；运行软件无需 Ruff。参考[测试报告](TEST_REPORT.md)、[测试用例](TEST_CASES.md)、[开发规范](DEVELOPMENT.md)、[视觉规范](DESIGN.md)、[主 SRS](specification.md)、[需求对应](SRS.md)、[整合历史](V2_INTEGRATION.md)及[变更记录](CHANGELOG.md)。
 
 ### 11. 限制与项目历史
 
 当前支持本地账户和单选题，不提供云同步或自助密码找回；取消图片编辑可能遗留未引用资源。API 决策和识图可能出错，摘要不能证明答案正确。真实 MAT009 图片请求返回 5 与三段摘要，仅说明单题联通，非全面模型评测。其他系统和所有 DPI 组合尚未全面验收。
 
-原 CLI 项目提供了原子 JSON、直接判题以及模型/服务/仓库分离基础。桌面项目从 `caseStudy/final` 独立，再整合到当前 V2 目录。附带英语、数学、科学三科 60 道配图示例，可通过数据增加新学科。旧版文档完整保存在[归档](docs/archive/README_PRE_BILINGUAL_20261113.md)及关联版本记录中，当前行为以上述英中说明为准。
+原 CLI 项目提供了原子 JSON、直接判题以及模型/服务/仓库分离基础。桌面项目从 `caseStudy/final` 独立，再整合到当前 V2 目录。附带英语、数学、科学三科 60 道配图示例，可通过数据增加新学科。旧版文档完整保存在[归档](archive/README_PRE_BILINGUAL_20261113.md)及关联版本记录中，当前行为以上述英中说明为准。
+
+## Documentation / 文档导航
+
+See the [documentation index](INDEX.md) for all documents. Project governance: [collaboration guidelines](AGENTS.md), [contribution guide](CONTRIBUTING.md), [code of conduct](CODE_OF_CONDUCT.md) and [license](LICENSE).
+
+Run the startup, installation and test commands in this guide from the repository root.
+
+完整目录见 [文档索引](INDEX.md)。治理文件：[协作约定](AGENTS.md)、[贡献指南](CONTRIBUTING.md)、[行为准则](CODE_OF_CONDUCT.md)、[许可证](LICENSE)。
+
+本文中的启动、安装和测试命令均在项目根目录执行。

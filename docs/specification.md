@@ -2,7 +2,7 @@
 
 Version: V2 documentation consolidation, 2026-11-13.
 
-English requirements are presented first, followed by the equivalent Chinese requirements using the same identifiers. Both parts describe the current implementation. Earlier requirements and amendments are preserved in [the specification archive](docs/archive/SPECIFICATION_PRE_BILINGUAL_20261113.md). Historical exclusions of AI features or student bank access no longer describe the current scope.
+English requirements are presented first, followed by the equivalent Chinese requirements using the same identifiers. Both parts describe the current implementation. Earlier requirements and amendments are preserved in [the specification archive](archive/SPECIFICATION_PRE_BILINGUAL_20261113.md). Historical exclusions of AI features or student bank access no longer describe the current scope.
 
 ## English
 
@@ -135,7 +135,7 @@ Acceptance requires documented startup; data-driven public/personal selection; c
 
 No cloud sync, self-service password recovery, online multiplayer, resumable incomplete session, adaptive learning engine, generated-question service, skill-card selection or general public-publishing workflow is claimed. JSON atomic replacement is not multi-process locking. Unused image files may remain. API latency, accuracy and visual understanding are not guaranteed. One real MAT009 visual decision returning 5 with three summaries is a limited integration check, not a general accuracy claim.
 
-The project retains its earlier CLI/desktop history, migrated accounts, source banks and documented changes. Read [implementation mapping](docs/SRS.md), [README](README.md), [changelog](docs/CHANGELOG.md) and [test report](docs/TEST_REPORT.md) alongside this SRS. Older documents are historical evidence, not current permission or feature rules.
+The project retains its earlier CLI/desktop history, migrated accounts, source banks and documented changes. Read [implementation mapping](SRS.md), [README](README.md), [changelog](CHANGELOG.md) and [test report](TEST_REPORT.md) alongside this SRS. Older documents are historical evidence, not current permission or feature rules.
 
 ## 中文
 
@@ -268,4 +268,15 @@ CSV 使用 UTF-8 BOM 并防公式前缀；生成及记录时间统一本机时�
 
 不宣称已实现云同步、自助找回、在线多人、未完成会话恢复、自适应引擎、自动生成题库、技能卡或通用公开发布流程。原子 JSON 不是多进程锁；可有未引用图片。API 延迟、正确率及识图质量不保证；MAT009 返回 5 与三段摘要只是单题联通验证。
 
-保留原 CLI/桌面历史、迁移账户、原题库和变更记录。结合[实现对应](docs/SRS.md)、[README](README.md)、[变更](docs/CHANGELOG.md)和[测试报告](docs/TEST_REPORT.md)阅读；旧文档作为历史证据，不作为当前权限或功能规则。
+保留原 CLI/桌面历史、迁移账户、原题库和变更记录。结合[实现对应](SRS.md)、[README](README.md)、[变更](CHANGELOG.md)和[测试报告](TEST_REPORT.md)阅读；旧文档作为历史证据，不作为当前权限或功能规则。
+
+
+## Review clarifications / 审查补充 · 2026-11-21
+
+- Cancelling animations must remove every active overlay; completing one animation must preserve other active overlays.
+- Battle skin selection and portrait loading use the unified skin registry, with default-image and legacy-registry fallbacks.
+- Augment rewards and streaks use the time-validated answer result. A late correct option earns no reward and breaks the streak; the exact deadline remains accepted by the base grading rule.
+
+- 取消动画须清理全部活动遮罩；单个动画完成不得误删其他活动遮罩。
+- 对战皮肤选择与立绘加载统一读取皮肤注册表，并保留默认图片和旧注册表回退。
+- 海克斯奖励与连击依据时限校验后的答题结果；超时选对不加分且中断连击，恰好截止时刻按基础计分规则接受。

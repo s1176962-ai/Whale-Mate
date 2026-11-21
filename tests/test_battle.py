@@ -6,8 +6,17 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock
 
-from learning_platform.battle import PROFILES, ApiOpponent, apply_damage, grade, opponent_answer
+from learning_platform.battle import (
+    PROFILES,
+    ApiOpponent,
+    apply_damage,
+    grade,
+    opponent_answer,
+    question_seconds,
+    speed_bands,
+)
 from learning_platform.models import Question
+from learning_platform.services import select_questions_weighted
 
 
 class BattleTests(unittest.TestCase):
@@ -111,3 +120,40 @@ class BattleTests(unittest.TestCase):
             self.assertIn(answer, q.options)
             self.assertLessEqual(low, delay)
             self.assertLessEqual(delay, high)
+
+    def test_question_difficulty_sets_clock_and_speed_bands(self):
+        self.assertEqual(question_seconds("easy"), 25)
+        self.assertEqual(question_seconds("medium"), 30)
+        self.assertEqual(question_seconds("hard"), 45)
+        self.assertEqual(question_seconds(None), 30)
+        self.assertEqual(speed_bands(25), ((4, 50), (8, 40), (12, 30), (17, 20), (25, 10)))
+        self.assertEqual(speed_bands(45), ((8, 50), (15, 40), (23, 30), (30, 20), (45, 10)))
+        # A 45s question keeps its scaled late bonus; 25s expires sooner.
+        self.assertEqual(grade(True, 24, limit=45, bands=speed_bands(45)).time, 20)
+        self.assertEqual(grade(True, 45, limit=45, bands=speed_bands(45)).total, 110)
+        self.assertEqual(grade(True, 26, limit=25, bands=speed_bands(25)).total, 0)
+
+    def test_difficulty_weights_shift_question_mix(self):
+        questions = [
+            Question(str(index), "Math", "a", difficulty, "single_choice",
+                     "q", ["1", "2"], "1", "explain")
+            for index, difficulty in enumerate(
+                ["easy"] * 40 + ["medium"] * 40 + ["hard"] * 40
+            )
+        ]
+
+        def mix(level):
+            from collections import Counter
+
+            counter = Counter()
+            for seed in range(30):
+                draw = select_questions_weighted(
+                    questions, level, count=10, rng=random.Random(seed)
+                )
+                counter.update(question.difficulty for question in draw)
+            return counter
+
+        beginner, hell = mix("入门级"), mix("地狱")
+        self.assertGreater(beginner["easy"], beginner["hard"])
+        self.assertGreater(hell["hard"], hell["easy"])
+        self.assertGreater(hell["hard"], beginner["hard"])

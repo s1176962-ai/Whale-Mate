@@ -189,23 +189,6 @@
     "option_images": null
   },
   {
-    "id": "MAT012",
-    "subject": "Mathematics",
-    "topic": "Fractions",
-    "difficulty": "hard",
-    "type": "single_choice",
-    "question": "What is 3/4 ÷ 2/5?",
-    "options": [
-      "3/10",
-      "15/8",
-      "8/15"
-    ],
-    "answer": "15/8",
-    "explanation": "Dividing by 2/5 means multiplying by 5/2: 3/4 × 5/2 = 15/8.",
-    "question_image": "assets/images/questions/MAT012.png",
-    "option_images": null
-  },
-  {
     "id": "MAT013",
     "subject": "Mathematics",
     "topic": "Algebra",

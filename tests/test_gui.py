@@ -13,16 +13,16 @@ from learning_platform.repositories import (
     PersonalQuestionRepository,
     ProgressRepository,
 )
+from tests import fresh_tk_root
 
 
 class GuiTests(unittest.TestCase):
     def setUp(self):
         try:
-            self.root = tk.Tk()
+            self.root = fresh_tk_root()
         except tk.TclError as exc:
             self.skipTest(f"Tk display unavailable: {exc}")
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.app = Application(self.root, progress_path=Path(temp.name) / "progress.json")
@@ -36,6 +36,102 @@ class GuiTests(unittest.TestCase):
         self.app.learning_plan = LearningPlanRepository(self.app.auth.learning_plan_path(user))
         self.app.home()
         self.root.update()
+
+    def test_settings_scroll_tracks_wrapped_content(self):
+        self.root.deiconify()
+        self.root.geometry("1000x700")
+        self.app.settings()
+        self.root.update()
+        app = self.app
+        self.assertEqual(int(app.canvas.itemcget(app.window, "height")), 0)
+        self.assertFalse(any(
+            isinstance(w, ttk.LabelFrame) and w.cget("text") == app.tr("皮肤")
+            for w in app.body.winfo_children()
+        ))
+        app.body.event_generate("<MouseWheel>", delta=-120)
+        self.root.update()
+        self.assertGreater(app.canvas.yview()[0], 0)
+        # Resize causes descriptions to wrap again after the initial layout.
+        self.root.geometry("760x600")
+        self.root.update()
+        app.canvas.yview_moveto(1)
+        self.root.update()
+        self.assertGreaterEqual(float(app.canvas.cget("scrollregion").split()[3]),
+                                app.body.winfo_reqheight())
+        last = app.body.winfo_children()[-1]
+        self.assertLessEqual(last.winfo_y() + last.winfo_height(),
+                             app.canvas.canvasy(app.canvas.winfo_height()))
+        self.assertAlmostEqual(app.canvas.yview()[1], 1)
+
+    def test_settings_small_wheel_deltas_and_control_hover_scroll_page(self):
+        self.root.deiconify()
+        self.root.geometry("1000x700")
+        self.app.settings()
+        self.root.update()
+        app = self.app
+        before = app.canvas.yview()[0]
+        for _ in range(12):
+            app.body.event_generate("<MouseWheel>", delta=-10)
+        self.root.update()
+        self.assertGreater(app.canvas.yview()[0], before)
+        combo = ttk.Combobox(app.body, values=("one", "two"), state="readonly")
+        combo.current(0)
+        combo.pack()
+        self.root.update()
+        app.canvas.yview_moveto(0)
+        app.display["wheel_controls"] = False
+        combo.event_generate("<MouseWheel>", delta=-120)
+        self.root.update()
+        self.assertGreater(app.canvas.yview()[0], 0)
+        self.assertEqual(combo.current(), 0)
+
+    def test_home_shirt_opens_separate_skin_page(self):
+        self.app.home()
+        self.app.skin_button.invoke()
+        self.root.update()
+        self.assertEqual(self.app.chrome_title.cget("text"), self.app.tr("皮肤"))
+        self.assertEqual(len(self.app._skin_controls["battle"]), 4)
+        self.app._apply_battle_skin("普通级", "hell")
+        self.assertEqual(self.app.skin_prefs.selected(
+            self.app.project_root, "battle", "普通级"), "hell")
+        self.assertEqual(self.app.skin_prefs.selected(
+            self.app.project_root, "battle", "困难"), "auto")
+        self.app.home()
+        self.assertTrue(self.app.skin_button.winfo_exists())
+
+    def test_cancel_motion_removes_all_overlapping_overlays(self):
+        from learning_platform.motion import Motion
+
+        self.root.deiconify()
+        self.root.update()
+        motion = Motion(self.root)
+        motion.fade_in(self.app.canvas, duration=10000)
+        first = motion._overlay
+        motion.fade_overlay(self.app.canvas, duration=10000)
+        second = motion._overlay
+        self.assertIsNot(first, second)
+        self.assertTrue(first.winfo_exists())
+        self.assertTrue(second.winfo_exists())
+        motion.cancel()
+        self.assertFalse(first.winfo_exists())
+        self.assertFalse(second.winfo_exists())
+        self.assertFalse(motion._jobs)
+        self.assertFalse(motion._overlays)
+        motion.cancel()  # Cleanup remains safe when invoked twice.
+
+    def test_overlay_completion_preserves_other_animation(self):
+        from learning_platform.motion import Motion
+
+        motion = Motion(self.root)
+        with patch.object(motion, "active", return_value=True):
+            motion.fade_in(self.app.canvas, duration=10000)
+            first = motion._overlay
+            motion.fade_in(self.app.canvas, duration=10000)
+            second = motion._overlay
+        motion._drop_overlay(first)
+        self.assertTrue(second.winfo_exists())
+        motion.cancel()
+        self.assertFalse(second.winfo_exists())
 
     def test_guest_cannot_open_notebook_or_history(self):
         self.app.enter_guest()
@@ -55,13 +151,35 @@ class GuiTests(unittest.TestCase):
         q = battle.questions[0]
         battle.answer(q.answer)
         decision = OpponentDecision(q.id, q.answer, 10, "A valid answer", "api")
-        battle.receive_decision(decision, None, 30.01)
+        # Use the round's actual deadline so the "late" assertion holds for
+        # every difficulty (hard questions have a 45s window, not 30s).
+        battle.receive_decision(decision, None, battle.ai_limit + 0.01)
         self.assertIsNone(battle.decision)
         self.assertIsNone(battle.planned)
         battle.finish_round()
         self.assertEqual((battle.player_hp, battle.ai_hp), (battle.max_hp, battle.max_hp))
         self.assertEqual(battle.records, [])
-        self.assertEqual(battle.next.cget("text"), self.app.tr("重试本题"))
+        self.assertEqual(battle.next.cget("text"), "▶")
+        self.root.after_cancel(battle.timer_id)
+
+    def test_voided_round_rolls_back_augment_state(self):
+        """A late/errored decision must restore the pre-answer augment snapshot."""
+        from learning_platform.battle import OpponentDecision
+
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.start()
+        q = battle.questions[0]
+        battle.answer(q.answer)  # saves a snapshot before player_score()
+        self.assertTrue(hasattr(battle, "_augment_snapshot"))
+
+        # Force the void path with a late decision, then spy on restore().
+        decision = OpponentDecision(q.id, q.answer, 10, "late", "api")
+        battle.receive_decision(decision, None, battle.ai_limit + 0.01)
+        with patch.object(battle.augment, "restore") as restore:
+            battle.finish_round()
+        restore.assert_called_once_with(battle._augment_snapshot)
+        self.assertEqual((battle.player_hp, battle.ai_hp), (battle.max_hp, battle.max_hp))
         self.root.after_cancel(battle.timer_id)
 
     def test_battle_round_renders_question_portrait_and_options(self):
@@ -95,10 +213,590 @@ class GuiTests(unittest.TestCase):
         battle.finish_round()
         self.assertEqual((battle.player_hp, battle.ai_hp), (battle.max_hp, battle.max_hp))
         self.assertEqual(battle.records, [])
-        self.assertEqual(battle.next.cget("text"), self.app.tr("重试本题"))
+        self.assertEqual(battle.next.cget("text"), "▶")
         self.assertIn("Invalid JSON response", battle.thinking_status.get("1.0", "end-1c"))
         battle.generation += 1
         self.root.after_cancel(battle.timer_id)
+
+    def test_battle_augment_selection_starts_match_with_card(self):
+        self.root.deiconify()
+        self.root.geometry("1000x800")
+        self.root.update()
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.choose_augment()
+        self.root.update()
+        self.assertTrue(all(card.find_all() for card in battle.augment_cards))
+        self.assertEqual(len(battle.augment_choices), 4)
+        self.assertEqual(len(battle.augment_cards), 4)
+        self.assertEqual(
+            {card.augment.rarity for card in battle.augment_cards},
+            {"silver", "gold", "prismatic", "demon"},
+        )
+        self.app.motion.cancel()
+        chosen = battle.augment_choices[0]
+        battle._confirm_augment(chosen)
+        self.root.update()
+        self.assertIs(battle.selected_augment, chosen)
+        self.assertIs(battle.augment.augment, chosen)
+        badge = battle.augment_badge
+        self.assertTrue(badge.winfo_exists())
+        self.assertTrue(badge.find_all())
+        badge_text = [
+            str(badge.itemcget(item, "text"))
+            for item in badge.find_all()
+            if badge.type(item) == "text"
+        ]
+        self.assertTrue(any(self.app.tr(chosen.name) in text for text in badge_text))
+        self.assertIn(self.app.tr(chosen.rarity_label), badge_text)
+        self.app.motion.cancel()
+        battle.generation += 1
+        self.root.after_cancel(battle.timer_id)
+
+    def test_demon_pact_does_not_void_slower_opponent_answer(self):
+        from learning_platform.augments import AUGMENTS
+        from learning_platform.battle import OpponentDecision
+
+        demon = next(card for card in AUGMENTS if card.id == "demon_pact")
+        from learning_platform.battle import question_seconds
+
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.start(demon)
+        self.root.update()
+        q = battle.questions[0]
+        self.assertEqual(battle.player_limit, question_seconds(q.difficulty) / 2)
+        self.assertEqual(battle.ai_limit, question_seconds(q.difficulty))
+        self.assertGreater(battle.ai_limit, battle.player_limit)
+
+        decision = OpponentDecision(q.id, q.answer, 12, "A valid answer", "api")
+        battle.receive_decision(decision, None, 12, battle.ai_limit)
+        battle._score_opponent(q)
+        self.assertEqual(battle.ai.correct, 100)
+        self.assertGreater(battle.ai.time, 0)
+
+        battle.answer(q.answer, limit=battle.player_limit)
+        battle.finish_round()
+        self.app.motion.cancel()
+        self.assertLess(battle.ai_hp, battle.max_hp)
+        self.assertEqual(battle.player_hp, battle.max_hp)
+        self.assertEqual(str(battle.ai_status.cget("foreground")), "#22C55E")
+        self.assertIn(
+            self.app.tr("魔王契约：本题总得分 ×3。"),
+            battle.result.get("1.0", "end-1c"),
+        )
+        battle.generation += 1
+        self.root.after_cancel(battle.timer_id)
+        battle._cancel_pending()
+
+    def test_battle_round_uses_question_difficulty_clock(self):
+        from learning_platform.battle import question_seconds
+
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.start()
+        self.root.update()
+        q = battle.questions[0]
+        expected = question_seconds(q.difficulty)
+        self.assertEqual(battle.question_limit, expected)
+        self.assertEqual(battle.player_limit, expected)
+        self.assertEqual(battle.ai_limit, expected)
+        self.assertEqual(battle.ai_grade_limit, expected)
+        battle._cancel_pending()
+
+    def test_demon_damage_float_with_motion_enabled(self):
+        """The ×3 float must not crash finish_round when motion is active.
+
+        battle_fx imports the raw ``tokens`` module, where colours live only in
+        ``palette()``; using ``T.BG`` there raised AttributeError and aborted the
+        whole round (no result text, no auto-advance). Activation requires a
+        viewable window, which is why earlier motion-off tests never hit it.
+        """
+        from learning_platform.augments import AUGMENTS
+        from learning_platform.battle import grade
+
+        demon = next(card for card in AUGMENTS if card.id == "demon_pact")
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.start(demon)
+        self.root.update()
+
+        battle.answer(battle.questions[0].answer)
+        battle.ai = grade(False, 31)  # player lands a hit -> ai_damage > 0
+        # Force the motion branch (a real session has a viewable window, the
+        # shared test root does not). tween() calls frame(0) synchronously, so
+        # a broken colour token raises right here instead of in an after().
+        with patch.object(self.app.motion, "active", return_value=True):
+            battle.finish_round()  # would raise AttributeError before the fix
+        self.root.update()
+
+        # finish_round ran to completion rather than aborting mid-damage stage.
+        self.assertLess(battle.ai_hp, battle.max_hp)
+        self.assertIn(
+            self.app.tr("魔王契约：本题总得分 ×3。"),
+            battle.result.get("1.0", "end-1c"),
+        )
+        # The floating ×3 label was actually painted on the enemy bar.
+        ai_floats = [
+            battle.ai_bar.itemcget(i, "text")
+            for i in battle.ai_bar.find_all()
+            if battle.ai_bar.type(i) == "text"
+            and battle.ai_bar.itemcget(i, "text") == "×3"
+        ]
+        self.assertGreaterEqual(len(ai_floats), 1)
+
+        self.app.motion.cancel()
+        battle.generation += 1
+        self.root.after_cancel(battle.timer_id)
+        battle._cancel_pending()
+
+    def test_battle_review_pause_and_space(self):
+        from learning_platform.battle import grade
+
+        self.root.deiconify()
+        self.root.geometry("1200x850")
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.start()
+        self.root.update()
+        battle.toggle_pause()
+        self.assertTrue(battle.active)
+        self.assertFalse(battle.paused)
+        self.assertIsNone(battle._auto_after)
+        self.assertTrue(battle.next.instate(["disabled"]))
+        battle.answer(battle.questions[0].answer)
+        battle.ai = grade(True, 12)
+        battle.planned = battle.questions[0].answer
+        battle.finish_round()
+        self.assertFalse(battle.paused)
+        self.assertIsNotNone(battle._auto_after)
+        # Focus on the control to verify native Space does not toggle twice.
+        battle.next.focus_force()
+        self.root.update()
+        battle.next.event_generate("<KeyPress-space>")
+        self.root.update()
+        self.assertTrue(battle.paused)
+        self.assertIsNone(battle._auto_after)
+        self.assertEqual(battle.next.cget("text"), "▶")
+        remaining = battle._advance_remaining
+        battle.next.event_generate("<KeyPress-space>")
+        self.root.update()
+        self.assertFalse(battle.paused)
+        self.assertEqual(battle._advance_remaining, remaining)
+        self.assertIsNotNone(battle._auto_after)
+        battle._cancel_pending()
+        self.root.after_cancel(battle.timer_id)
+
+    def test_battle_wrong_answer_pauses_including_final_round(self):
+        from learning_platform.battle import grade
+
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.start()
+        battle.index = len(battle.questions) - 1
+        battle.answer(None, timed_out=True)
+        battle.ai = grade(True, 12)
+        battle.planned = battle.questions[battle.index].answer
+        battle.finish_round()
+        self.assertTrue(battle.paused)
+        self.assertIsNone(battle._auto_after)
+        self.assertTrue(battle.next.instate(["!disabled"]))
+        self.assertIn(battle.questions[battle.index].explanation,
+                      battle.thinking_status.get("1.0", "end-1c"))
+        battle.toggle_pause()
+        self.assertIsNotNone(battle._auto_after)
+        battle._cancel_pending()
+        self.root.after_cancel(battle.timer_id)
+
+    def test_battle_health_bars_and_damage_poses(self):
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.start()
+        self.root.update()
+        self.assertTrue(battle.player_bar.winfo_exists())
+        self.assertTrue(battle.ai_bar.winfo_exists())
+        self.assertEqual(battle.player_bar.value, battle.max_hp)
+
+        battle.answer(battle.questions[0].answer)
+        battle.ai = __import__(
+            "learning_platform.battle", fromlist=["grade"]
+        ).grade(False, 31)
+        battle.planned = "wrong option"
+        battle.finish_round()
+        self.app.motion.cancel()
+        self.assertLess(battle.ai_bar.value, battle.max_hp)
+        self.assertTrue(battle.ai_bar.winfo_exists())
+
+        # Segmented score cards: four framed values with total = sum of parts.
+        self.assertTrue(battle.player_score.winfo_exists())
+        self.assertTrue(battle.ai_score.winfo_exists())
+        self.assertEqual(battle.player_score._segment_values(), (100, 50, 0, 150))
+        ptexts = [
+            str(battle.player_score.itemcget(i, "text"))
+            for i in battle.player_score.find_all()
+            if battle.player_score.type(i) == "text"
+        ]
+        self.assertIn("+", ptexts)
+        self.assertIn("=", ptexts)
+        self.assertIn("150", ptexts)
+        self.assertIn(self.app.tr("正确"), ptexts)
+        self.assertIn(self.app.tr("总分"), ptexts)
+        # The centre dialog keeps the answer/explanation and drops the
+        # now-redundant score arithmetic.
+        result = battle.result.get("1.0", "end-1c")
+        self.assertIn(self.app.tr("正确答案"), result)
+        self.assertNotIn(" = 150", result)
+        battle.generation += 1
+        self.root.after_cancel(battle.timer_id)
+        battle._cancel_pending()
+
+    def test_battle_health_bars_share_column_and_clear_names(self):
+        from tkinter import font as tkfont
+
+        from learning_platform import tokens as T
+
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.start()
+        self.root.update()
+        name_font = tkfont.Font(font=T.TYPE_BODY)
+        longest = max(
+            name_font.measure(battle.player_name),
+            name_font.measure(battle.opponent_name),
+        )
+        self.assertEqual(battle.player_bar.label_width, battle.ai_bar.label_width)
+        self.assertGreaterEqual(battle.player_bar.label_width, longest)
+        self.assertEqual(battle.player_bar.winfo_width(), battle.ai_bar.winfo_width())
+        self.assertEqual(battle.player_bar.bar_geometry, battle.ai_bar.bar_geometry)
+        self.assertFalse(battle.player_bar.mirrored)
+        self.assertTrue(battle.ai_bar.mirrored)
+        if battle.player_bar.value_x is not None:
+            self.assertEqual(
+                battle.player_bar.value_x + battle.ai_bar.value_x,
+                battle.player_bar.winfo_width(),
+            )
+        # The two combatants sit side by side in one row (reference layout).
+        self.assertEqual(battle.player_bar.grid_info()["row"], 0)
+        self.assertEqual(battle.ai_bar.grid_info()["row"], 0)
+        self.assertNotEqual(
+            battle.player_bar.grid_info()["column"],
+            battle.ai_bar.grid_info()["column"],
+        )
+        self.assertEqual(battle.player_bar.winfo_y(), battle.ai_bar.winfo_y())
+        battle.generation += 1
+        self.root.after_cancel(battle.timer_id)
+        battle._cancel_pending()
+
+    def test_battle_header_fixed_and_clock_in_dock(self):
+        """Augment + bars sit in a fixed header; clock sits in the dock centre.
+
+        The health bars and augment banner must not scroll with the question,
+        and the round counter/timer must be in the bottom centre column rather
+        than above the question.
+        """
+        from learning_platform.augments import AUGMENTS
+
+        self.app.battle_page()
+        battle = self.app.battle
+        augment = next(card for card in AUGMENTS if card.rarity == "prismatic")
+        battle.start(augment)
+        self.root.update()
+
+        header = self.app.battle_header
+        # Fixed header is packed into outer, not the scrolling canvas body.
+        self.assertTrue(header.winfo_exists())
+        self.assertIsNot(header.master, self.app.body)
+        self.assertIs(header.master, self.app.outer)
+        # Bars and augment banner are children of that fixed header.
+        self.assertIs(battle.player_bar.master.master, header)
+        self.assertIs(battle.ai_bar.master.master, header)
+        self.assertIs(battle.augment_badge.master, header)
+        # Clock lives in the bottom dock's centre column, above the data row,
+        # between the two symmetric score cards (clock -> panel -> dock).
+        self.assertIs(battle.clock.master.master, self.app.action_dock)
+        self.assertEqual(battle.clock.grid_info()["row"], 0)
+        self.assertEqual(battle.clock.grid_info()["column"], 1)
+        self.assertIn("/", battle.clock.cget("text"))
+        self.assertIn("s", battle.clock.cget("text"))
+        # Battle-data output is on its own row below the clock, not sharing a
+        # horizontal band with the score cards (that crowding hid the content).
+        self.assertEqual(battle.result.master.master.grid_info()["row"], 2)
+        # Score cards share one uniform column definition => mirror symmetry.
+        self.assertEqual(battle.player_score.grid_info()["column"], 0)
+        self.assertEqual(battle.ai_score.grid_info()["column"], 2)
+        self.assertEqual(battle.player_score.master, battle.ai_score.master)
+        # Two-line HUD keeps the names separate from the health track.
+        self.assertLess(battle.player_bar.winfo_reqheight(), 64)
+        self.assertLess(battle.player_score.winfo_reqheight(), 60)
+
+        battle.generation += 1
+        self.root.after_cancel(battle.timer_id)
+        battle._cancel_pending()
+
+    def test_battle_cards_share_health_bar_inset_and_result_is_centred(self):
+        """Question cards line up with the fixed bars; centre text is centred.
+
+        The canvas window must use SPACE_4 AND measure against `outer`, while
+        the body frame's own padding stays 0. With a visible scrollbar the
+        canvas is ~10px narrower than `outer`, so measuring against the canvas
+        shrank the cards; a second SPACE_4 on the body frame shrank them again.
+        Separately, tk.Text ignores the built-in "all" tag for justify, so
+        centring needs a named tag covering the whole document.
+        """
+        from learning_platform import tokens as T
+        from learning_platform.gui import AssistantReply
+
+        self.root.deiconify()
+        self.root.geometry("1400x1000")
+        self.root.update()
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.start()
+        self.root.update()
+
+        # The single inset matches the fixed header/dock; the body frame adds
+        # none, and the width is measured against `outer` (scrollbar-proof).
+        self.assertEqual(self.app._body_side_pad, T.px(T.SPACE_4))
+        self.assertTrue(self.app._body_match_outer)
+        body_pad_left, _ = self.app.body.cget("padding")
+        self.assertEqual(body_pad_left, 0)
+
+        # Geometry invariant: the body window's real canvas bbox starts at
+        # SPACE_4 and spans exactly the header's inner width. Root coordinates
+        # are unreliable here (withdrawn test root, and canvas-embedded widgets
+        # omit the window item's own offset), so compare widths in local space.
+        self.root.update_idletasks()
+        self.root.update()
+        bx0, _, bx1, _ = self.app.canvas.bbox(self.app.window)
+        header_w = self.app.battle_header.winfo_width()
+        self.assertEqual(bx0, T.px(T.SPACE_4))
+        self.assertEqual(bx1 - bx0, header_w - 2 * T.px(T.SPACE_4))
+
+        # Health bars and question cards must use the SAME symmetric column
+        # structure: equal widths and mirror padx on the two columns. Any
+        # asymmetry (e.g. cards with padx=(0,12)/(0,0)) shifted the middle
+        # gutter and made the right column wider than the left — the ragged
+        # edges the reference layout forbids.
+        pcard, acard = battle.player_status.master, battle.ai_status.master
+        self.assertEqual(pcard.winfo_width(), acard.winfo_width())
+        self.assertEqual(battle.player_bar.winfo_width(), battle.ai_bar.winfo_width())
+        self.assertEqual(pcard.winfo_width(), battle.player_bar.winfo_width())
+        battle.player_bar.set_value(50, animate=False)
+        battle.ai_bar.set_value(50, animate=False)
+        left = battle.player_bar.fill_geometry
+        right = battle.ai_bar.fill_geometry
+        width = battle.player_bar.winfo_width()
+        self.assertAlmostEqual(left[0], width - right[2])
+        self.assertAlmostEqual(left[2], width - right[0])
+        battle.player_bar.set_value(0, animate=False)
+        self.assertEqual(battle.player_bar.fill_geometry[0], battle.player_bar.fill_geometry[2])
+        self.assertTrue(battle.ai_score.mirrored)
+        self.assertFalse(battle.player_score.mirrored)
+
+        left_c = pcard.grid_info()["column"]
+        right_c = acard.grid_info()["column"]
+        self.assertEqual((left_c, right_c), (0, 1))
+        # Symmetric padx: left card's right gap == right card's left gap.
+        lp = pcard.grid_info()["padx"]
+        rp = acard.grid_info()["padx"]
+        self.assertEqual(lp[0], 0)  # left card hugs the outer left edge
+        self.assertEqual(rp[1], 0)  # right card hugs the outer right edge
+        self.assertEqual(lp[1], rp[0])  # equal middle gutter on both sides
+
+        # Centring uses a named tag spanning the full text, not the "all" tag.
+        self.assertIsInstance(battle.result, AssistantReply)
+        self.assertEqual(battle.result._justify, "center")
+        self.assertIn("aligned", battle.result.tag_names())
+        self.assertNotIn("all", battle.result.tag_names())
+        battle.result.configure(text="alpha\nbeta")
+        ranges = battle.result.tag_ranges("aligned")
+        # Tk keeps one implicit trailing newline; the tag must cover it too
+        # (stopping at end-1c left the last line left-aligned).
+        self.assertEqual((str(ranges[0]), str(ranges[-1])), ("1.0", "3.0"))
+
+        battle.generation += 1
+        self.root.after_cancel(battle.timer_id)
+        battle._cancel_pending()
+
+    def test_battle_damage_pose_images_exist(self):
+        root = self.app.project_root
+        for state in ("attacked", "die", "attack"):
+            path = root / "assets" / "battle" / f"ai_assistant_{state}.png"
+            self.assertTrue(path.exists(), str(path))
+
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.start()
+        battle.show_expression("attacked")
+        self.assertTrue(battle.portrait.cget("image"))
+        battle.generation += 1
+        self.root.after_cancel(battle.timer_id)
+        battle._cancel_pending()
+
+    def test_skin_packs_have_all_states(self):
+        """Every skin pack provides the full 7-state set as standalone PNGs."""
+        root = self.app.project_root
+        skins = (
+            (root / "assets" / "battle" / "skins" / "default", "default"),
+            (root / "assets" / "battle" / "skins" / "hell", "hell"),
+        )
+        states = ("normal", "thinking", "correct", "wrong", "attack", "attacked", "die")
+        for skin_dir, name in skins:
+            self.assertTrue(skin_dir.is_dir(), name)
+            for state in states:
+                path = skin_dir / f"{state}.png"
+                self.assertTrue(path.exists(), f"{name}/{state}.png")
+                from PIL import Image
+
+                with Image.open(path) as im:
+                    self.assertEqual(im.mode, "RGBA", f"{name}/{state}.png")
+        registry = root / "assets" / "battle" / "skins" / "skin_registry.json"
+        self.assertTrue(registry.exists())
+
+    def test_hell_difficulty_uses_hell_skin_pack(self):
+        """地狱难度 uses the hell skin pack (7 poses); others use default."""
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.start()
+
+        # Normal difficulty -> default skin pack, all standalone PNGs.
+        battle.difficulty = "普通级"
+        self.assertFalse(battle._hell_art)
+        self.assertEqual(battle._skin_id, "default")
+        for state in ("thinking", "correct", "wrong", "attack"):
+            path, sheet = battle._portrait_source(state)
+            self.assertEqual(path.parent.name, "default", state)
+            self.assertFalse(sheet, state)
+
+        # Hell difficulty -> hell skin for every one of the seven poses.
+        battle.difficulty = "地狱"
+        self.assertTrue(battle._hell_art)
+        self.assertEqual(battle._skin_id, "hell")
+        for state in ("normal", "thinking", "correct", "wrong", "attack", "attacked", "die"):
+            path, sheet = battle._portrait_source(state)
+            self.assertEqual(path.parent.name, "hell", state)
+            self.assertEqual(path.name, f"{state}.png", state)
+            self.assertFalse(sheet, state)
+
+        battle.show_expression("normal")
+        self.assertTrue(battle.portrait.cget("image"))
+        battle.generation += 1
+        self.root.after_cancel(battle.timer_id)
+        battle._cancel_pending()
+
+    def test_skin_store_difficulty_and_fallback(self):
+        """Skin registry maps difficulties to skins and never returns a missing path."""
+        from learning_platform import skins as skin_store
+
+        root = self.app.project_root
+        self.assertEqual(
+            skin_store.skin_for_difficulty(root, "地狱"), "hell"
+        )
+        self.assertEqual(
+            skin_store.skin_for_difficulty(root, "普通级"), "default"
+        )
+        for skin in skin_store.available_skins(root):
+            for state in skin_store.DEFAULT_STATES:
+                path = skin_store.portrait_path(root, skin, state)
+                self.assertIsNotNone(path, f"{skin}/{state}")
+                self.assertTrue(path.exists(), f"{skin}/{state}: {path}")
+            # Unknown states resolve to None (shown as text fallback) or a file.
+            self.assertFalse(skin_store.is_sheet(root, skin, "thinking"))
+
+    def test_achievement_page_renders_badges(self):
+        self.app.achievements_page()
+        self.root.update()
+        from learning_platform.achievements import ACHIEVEMENTS
+
+        canvases = [
+            child
+            for child in self.app.body.winfo_children()
+            for child in child.winfo_children()
+            if child.winfo_class() == "Canvas"
+        ]
+        self.assertGreaterEqual(len(canvases), len(ACHIEVEMENTS))
+
+    def test_achievements_sorted_demon_to_silver(self):
+        from learning_platform.achievements import ACHIEVEMENTS
+
+        rank = {"demon": 0, "prismatic": 1, "gold": 2, "silver": 3}
+        tiers = [rank[badge.rarity] for badge in ACHIEVEMENTS]
+        self.assertEqual(tiers, sorted(tiers))
+
+    def test_locked_badge_shows_tier_border_and_label(self):
+        from learning_platform.achievement_ui import AchievementCard
+        from learning_platform.achievements import BY_ID
+
+        self.root.deiconify()
+        self.root.geometry("1000x800")
+        card = AchievementCard(
+            self.app.body, BY_ID["demon_slayer"], False, self.app.tr,
+            motion=self.app.motion,
+        )
+        card.pack()
+        self.root.update()
+        self.assertTrue(card.find_all())
+        texts = [
+            str(card.itemcget(item, "text"))
+            for item in card.find_all() if card.type(item) == "text"
+        ]
+        self.assertTrue(any("魔王" in t or "Demon" in t for t in texts), texts)
+        # The unlock condition must stay visible even while locked (it is
+        # wrapped to two lines, so match on a distinctive leading fragment).
+        condition = self.app.tr(BY_ID["demon_slayer"].description)
+        self.assertTrue(
+            any(condition[:8] in t for t in texts), texts
+        )
+        # Border is built from many line segments (card-style), not one flat
+        # round_rect outline.
+        self.assertGreater(
+            len([i for i in card.find_all() if card.type(i) == "line"]), 8
+        )
+        self.app.motion.cancel()
+        # An unlocked prismatic badge gets the same multi-colour segmented edge.
+        prism = AchievementCard(
+            self.app.body, BY_ID["one_shot"], True, self.app.tr,
+            motion=self.app.motion,
+        )
+        prism.pack()
+        self.root.update()
+        plines = [i for i in prism.find_all() if prism.type(i) == "line"]
+        self.assertGreater(len(plines), 8)
+        self.assertGreater(
+            len({str(prism.itemcget(i, "fill")) for i in plines}), 1
+        )
+        self.app.motion.cancel()
+
+    def test_achievement_entry_is_in_battle_setup_not_sidebar(self):
+        self.app.battle_page()
+
+        def walk(widget):
+            found = []
+            try:
+                found.append(str(widget.cget("text")))
+            except (tk.TclError, AttributeError):
+                pass
+            for child in widget.winfo_children():
+                found.extend(walk(child))
+            return found
+
+        texts = walk(self.app.body)
+        self.assertIn(self.app.tr("成就徽章"), texts)
+        self.assertNotIn("achievements", getattr(self.app, "_nav_buttons", {}))
+
+    def test_guest_achievement_page_shows_signup_prompt(self):
+        self.app.enter_guest()
+        self.app.achievements_page()
+        self.root.update()
+        texts = []
+        for widget in self.app.body.winfo_children():
+            try:
+                texts.append(str(widget.cget("text")))
+            except tk.TclError:
+                pass
+        joined = " ".join(texts).lower()
+        self.assertTrue("account" in joined or "账号" in joined, joined)
+        self.assertFalse("unlocked" in joined or "已解锁" in joined, joined)
 
     def test_notebook_overflow_shows_scrollbar(self):
         self.root.deiconify()
@@ -408,6 +1106,129 @@ class GuiTests(unittest.TestCase):
         self.app._layout_login()
         self.app.enter_guest()
         self.assertTrue(self.app.signed_in)
+
+    def test_interactive_controls_without_face_still_activate(self):
+        """Regression: controls lacking _face() must not crash on press/release.
+
+        Segmented / Stepper / Dropdown / Toggle inherit Interactive but do not
+        define ``_face()``. If ``_face_current()`` calls it unconditionally,
+        the press/release handlers raise before ``_activate()`` runs and every
+        such control becomes silently unclickable (the Configure-quiz bug).
+        """
+        from learning_platform import modern
+
+        calls = []
+        seg = modern.Segmented(self.root, values=["a", "b", "c"], on_change=calls.append)
+        seg.pack()
+        self.root.update_idletasks()
+        # A control without _face() must report no blend face, not raise.
+        self.assertIsNone(seg._face_current())
+        # Simulate the press/release sequence the real pointer generates.
+        seg._st_press(type("E", (), {"x": 0})())
+        seg._st_release(None)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0], "a")
+
+        # Every Interactive subclass either defines _face() or is safe.
+        for cls in (modern.Segmented, modern.Stepper, modern.Dropdown, modern.Toggle):
+            self.assertFalse(
+                hasattr(cls, "_face"),
+                f"{cls.__name__} unexpectedly defines _face; test needs updating",
+            )
+        seg.destroy()
+
+    def test_battle_infinite_mode_reshuffles_instead_of_ending(self):
+        """With count=∞ the deck reshuffles until HP hits zero."""
+        self.app.battle_page()
+        battle = self.app.battle
+        battle.count.set("∞")
+        battle.subject.set("All")
+        battle.topic.set(self.app.tr("全部"))
+        battle.start()
+        self.assertTrue(battle.infinite)
+        deck_size = len(battle.questions)
+        self.assertGreater(deck_size, 0)
+        # Exhaust the deck with both sides still alive.
+        battle.index = deck_size - 1
+        battle.player_hp = battle.ai_hp = battle.max_hp
+        battle.advance()
+        self.assertFalse(getattr(battle, "_result_shown", False))
+        self.assertEqual(battle.index, 0)
+        self.assertEqual(len(battle.questions), deck_size)
+        battle._cancel_pending()
+
+    def test_battle_setup_has_bank_subject_topic_count_controls(self):
+        """Battle setup exposes bank -> subject -> topic -> count in order."""
+        self.app.battle_page()
+        battle = self.app.battle
+        for attr in (
+            "bank_picker", "subject_box", "topic_box", "count_picker",
+        ):
+            widget = getattr(battle, attr, None)
+            self.assertIsNotNone(widget, attr)
+            self.assertTrue(widget.winfo_exists(), attr)
+        self.assertIn("public", battle.bank_picker._values)
+        self.assertIn("∞", battle.count_picker._values)
+        self.assertIn(self.app.tr("全部"), list(battle.topic_box._values))
+        # Default count is finite and the hint describes the match count.
+        self.assertEqual(battle.count.get(), "5")
+
+    def test_battle_setup_filters_share_one_row_and_actions_stay_in_card(self):
+        """Filters use equal grid columns; Start is inside the visible card."""
+        self.app.battle_page()
+        battle = self.app.battle
+        columns = []
+        for widget in (
+            battle.bank_picker, battle.subject_box,
+            battle.topic_box, battle.count_picker,
+        ):
+            info = widget.master.grid_info()
+            self.assertEqual(int(info["row"]), 0)
+            columns.append(int(info["column"]))
+        self.assertEqual(columns, [0, 1, 2, 3])
+
+        # The primary action must not be packed onto the scroller body after an
+        # expanding card (that made it invisible in a normal-height window).
+        self.assertTrue(hasattr(battle, "start_button"))
+        node = battle.start_button
+        ancestors = []
+        while node is not None:
+            ancestors.append(node)
+            node = node.master
+        self.assertIn(self.app.battle.setup_card, ancestors)
+        self.assertEqual(battle.start_button.cget("text"), self.app.tr("开始对战"))
+
+    def test_achievement_store_reset_clears_everything(self):
+        from learning_platform.achievements import AchievementStore
+
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        path = Path(tmp) / "achievements.json"
+        store = AchievementStore(path)
+        store.evaluate({"finished": True, "won": True, "total_matches": 1})
+        self.assertGreater(len(store.unlocked_ids()), 0)
+        cleared = store.reset()
+        self.assertGreater(cleared, 0)
+        self.assertEqual(store.unlocked_ids(), set())
+        data = store.load()
+        self.assertEqual(data["stats"]["matches"], 0)
+        self.assertEqual(data["stats"]["wins"], 0)
+
+    def test_settings_has_reset_achievements_action(self):
+        from unittest.mock import patch
+
+        self.app.settings()
+        self.root.update()
+        # The reset button exists and asks for confirmation before clearing.
+        with patch("learning_platform.gui.messagebox.askyesno", return_value=False), \
+             patch("learning_platform.gui.messagebox.showinfo") as info:
+            self.app._reset_achievements()
+            info.assert_not_called()
+        with patch("learning_platform.gui.messagebox.askyesno", return_value=True), \
+             patch("learning_platform.gui.messagebox.showinfo") as info:
+            self.app._reset_achievements()
+            self.assertTrue(info.called)
+
 
 
 if __name__ == "__main__":
