@@ -85,6 +85,78 @@ from .tokens import (
     set_scale,
 )
 
+# Colour tokens are injected into this module's globals at runtime by
+# set_theme()/globals().update(palette()). Static type checkers cannot see that,
+# so declare them here as bare annotations: at runtime these are erased to
+# __annotations__ (no value assigned), and set_theme() still supplies the real
+# colours. This keeps ``T.BG``-style reads type-clean under Pylance/pyright.
+# Keep this list in sync with tokens.palette() (tested in test_ui_tokens.py).
+ACCENT: str
+AI_INPUT_BG: str
+AI_INPUT_EDGE: str
+AI_REPLY_BG: str
+AI_REPLY_EDGE: str
+BG: str
+BORDER: str
+BORDER_CONTROL: str
+BORDER_LIGHT: str
+BUTTON_FILL: str
+BUTTON_INK: str
+CHECK_BORDER: str
+CHECK_MARK: str
+COLOR_ACCENT: str
+COLOR_BORDER: str
+COLOR_BUTTON: str
+COLOR_BUTTON_INK: str
+COLOR_MUTED: str
+COLOR_PAGE: str
+COLOR_PRIMARY: str
+COLOR_PRIMARY_DARK: str
+COLOR_RAISED: str
+COLOR_SURFACE: str
+COLOR_TEXT: str
+DISABLED_FILL: str
+DISABLED_INK: str
+ERROR: str
+ERROR_BG: str
+FOCUS_GLOW: str
+HOVER: str
+INFO: str
+INFO_BG: str
+MUTED: str
+NAV: str
+NAV_BG: str
+NAV_SELECTED: str
+ON_PRIMARY: str
+PAGE: str
+PRESSED: str
+PRIMARY: str
+PRIMARY_ACTIVE: str
+PRIMARY_DISABLED: str
+PRIMARY_HOVER: str
+PRIMARY_SOFT: str
+RAISED: str
+SCROLL_ACTIVE: str
+SCROLL_HOVER: str
+SCROLL_THUMB: str
+SEGMENT_SELECTED: str
+SEGMENT_TRACK: str
+SELECTED_BG: str
+SHADOW: str
+SHADOW_CARD: str
+SHADOW_FAR: str
+SHADOW_NEAR: str
+SKY: str
+SUCCESS_BG: str
+SUCCESS_FG: str
+SURFACE: str
+TEXT: str
+TEXT_MUTED: str
+TEXT_SECONDARY: str
+TRACK: str
+WARNING: str
+WARNING_BG: str
+
 
 def set_theme(name):
     """Rebind every colour token in this module and return the applied key."""

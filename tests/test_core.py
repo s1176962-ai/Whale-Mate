@@ -28,10 +28,10 @@ class CoreTests(unittest.TestCase):
         return next(answer for answer in q.options if answer != q.answer)
 
     def test_sample_banks(self):
-        self.assertEqual(len(self.questions), 60)
+        self.assertEqual(len(self.questions), 58)
         self.assertEqual({q.subject for q in self.questions}, {"English", "Mathematics", "Science"})
         self.assertEqual(self.bank.warnings, [])
-        self.assertIn("苹果", self.q.options)
+        self.assertTrue(all(q.answer in q.options for q in self.questions))
 
     def test_required_fields(self):
         for field in (
@@ -90,7 +90,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(len({q.id for q in result}), 4)
         self.assertEqual(result, select_questions(self.questions, count=4, rng=random.Random(8)))
         self.assertNotEqual(result, select_questions(self.questions, count=4, rng=random.Random(9)))
-        self.assertEqual(len(select_questions(self.questions, count=100)), 60)
+        self.assertEqual(len(select_questions(self.questions, count=100)), 58)
 
     def test_invalid_settings(self):
         for count in (0, -1, 2.5, True, "3"):

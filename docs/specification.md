@@ -2,7 +2,7 @@
 
 Version: V2 documentation consolidation, 2026-11-13.
 
-English requirements are presented first, followed by the equivalent Chinese requirements using the same identifiers. Both parts describe the current implementation. Earlier requirements and amendments are preserved in [the specification archive](docs/archive/SPECIFICATION_PRE_BILINGUAL_20261113.md). Historical exclusions of AI features or student bank access no longer describe the current scope.
+English requirements are presented first, followed by the equivalent Chinese requirements using the same identifiers. Both parts describe the current implementation. Earlier requirements and amendments are preserved in [the specification archive](archive/SPECIFICATION_PRE_BILINGUAL_20261113.md). Historical exclusions of AI features or student bank access no longer describe the current scope.
 
 ## English
 
@@ -100,11 +100,13 @@ English shall be the default interface language for new settings, with Simplifie
 
 #### FR-17: Quiz battles and decision records
 
-All roles may battle against a local simulation or an optional API opponent using existing public-bank questions. Both sides receive the same question and a 30-second deadline. Correct answers earn 100 points plus speed bonuses of 50/40/30/20/10 within 5/10/15/20/30 seconds; wrong answers earn no correctness/speed points. Extra points remain an extension field. Initial HP choices are 100/200/300/500/1,000. The lower round score loses HP equal to the difference, bounded at zero. HP depletion or question exhaustion ends the match.
+Choose public or personal questions (personal banks require login), 3/5/10 questions or infinite mode, opponent level, Local/API, and initial HP of 100/200/300/500/1,000. Pick one of three distinct weighted-random augments; rarities have no fixed slots. Normal drafts guarantee a Demon after three misses, reset on any Demon appearance, and persist progress per account. Optional Demo draft guarantees a Demon without changing normal progress; it defaults off on setup entry. Question difficulty sets the base clock to easy 25s / medium 30s / hard 45s. Timely correct answers earn 100 plus scaled speed bonuses and augment effects; score differences cause HP loss. Timing augments affect only the player. Exact thresholds and effects are defined in [current battle rules](BATTLE.md).
+
+During answering or waiting for the opponent, pause and early settlement are disabled. Correct answers advance automatically after about three seconds; mistakes/timeouts pause for review. ⏸ / ▶ and Space pause/resume the remaining transition time, with a visible state caption. Infinite mode reshuffles when questions run out and allows End match after a settled round. An early finish shows settled questions, scores and HP, without awarding victory/completion or incrementing completed-match/win counts; earned question/streak badges may still apply. Knockouts use normal results. Settlement cancels pending transitions and occurs once.
 
 Local levels use probabilities 50%/72%/88%/97% and simulated timing ranges 12-24/8-18/4-12/2-7 seconds. API levels guide checking behaviour and simulated timing without guaranteeing those accuracy rates. API output shall bind question ID, selected option, simulated time and concise decision summaries. Reading, option comparison and choosing/checking are replacing UI activity stages, not a live internal reasoning trace. Answer-related content stays hidden until both sides finish. Results shall show the stored decision and separate reference explanation, not a newly invented retrospective justification.
 
-API battles may send stem/option images together with text, but never the answer key or reference explanation. Images shall be labelled, remain inside the project, use PNG/JPEG/GIF/WebP, and be limited to 8 MiB per image/16 MiB total. Official DeepSeek image requests use `deepseek-flash`; custom endpoints need a compatible model. Structured output is capped at 800 tokens. Invalid or failed responses and responses received at/after the deadline shall void the round with no points or HP change and allow retry. These API decisions remain fallible. Online multiplayer and skill-card selection are future work.
+API battles may send stem/option images together with text, but never the answer key or reference explanation. Images shall be labelled, remain inside the project, use PNG/JPEG/GIF/WebP, and be limited to 8 MiB per image/16 MiB total. Official DeepSeek image requests use `deepseek-flash`; custom endpoints need a compatible model. Structured output is capped at 800 tokens. Invalid or failed responses and responses received at/after the deadline shall void the round with no points or HP change and allow retry. These API decisions remain fallible. Augment selection is implemented; online multiplayer remains out of scope.
 
 #### FR-18: English exports and timestamps
 
@@ -133,9 +135,9 @@ Acceptance requires documented startup; data-driven public/personal selection; c
 
 ### 5. Boundaries and history
 
-No cloud sync, self-service password recovery, online multiplayer, resumable incomplete session, adaptive learning engine, generated-question service, skill-card selection or general public-publishing workflow is claimed. JSON atomic replacement is not multi-process locking. Unused image files may remain. API latency, accuracy and visual understanding are not guaranteed. One real MAT009 visual decision returning 5 with three summaries is a limited integration check, not a general accuracy claim.
+No cloud sync, self-service password recovery, online multiplayer, resumable incomplete session, adaptive learning engine, generated-question service or general public-publishing workflow is claimed. JSON atomic replacement is not multi-process locking. Unused image files may remain. API latency, accuracy and visual understanding are not guaranteed. One real MAT009 visual decision returning 5 with three summaries is a limited integration check, not a general accuracy claim.
 
-The project retains its earlier CLI/desktop history, migrated accounts, source banks and documented changes. Read [implementation mapping](docs/SRS.md), [README](README.md), [changelog](docs/CHANGELOG.md) and [test report](docs/TEST_REPORT.md) alongside this SRS. Older documents are historical evidence, not current permission or feature rules.
+The project retains its earlier CLI/desktop history, migrated accounts, source banks and documented changes. Read [implementation mapping](SRS.md), [README](README.md), [changelog](CHANGELOG.md) and [test report](TEST_REPORT.md) alongside this SRS. Older documents are historical evidence, not current permission or feature rules.
 
 ## 中文
 
@@ -233,11 +235,13 @@ JSON/CSV 限制 5 MB、1000 条，经过校验、逐行预览和明确确认。�
 
 #### FR-17：答题对战与决策记录
 
-所有角色使用已有公共题库对战，本地模拟或 API 可选，双方同题 30 秒。答对 100 分，5/10/15/20/30 秒内额外 50/40/30/20/10，答错无正确/时间分，额外分字段预留。初始血量 100/200/300/500/1000，低分方扣除分差且不低于 0；归零或题目完成结束。
+选择公共或本人的个人题库（个人题库需登录）、科目、主题、3/5/10 题或无限模式、对手等级、Local/API 及初始血量 100/200/300/500/1000。开局按权重抽三张不同海克斯供三选一，不固定稀有度。普通发牌连续三次未出魔王则第四次必出，出现即重置，按发牌次数计数并按账号保存；演示抽卡保证魔王且不影响普通保底，进入设置默认关闭。题目基础窗口为 easy 25 秒 / medium 30 秒 / hard 45 秒；时限内答对基础 100 分，加按窗口缩放的速度分及强化效果，低分方按分差扣血。加时或减时只影响玩家。详细阈值及效果统一见[当前对战规则](BATTLE.md)。
+
+作答及等待对手期间不可暂停或主动结算。答对约三秒自动推进，答错或超时自动暂停供复盘。⏸ / ▶ 和空格暂停、恢复剩余等待时间，按钮旁说明当前状态。无限模式题尽重洗，已结算回合后可“结束并结算”。双方仍存活时标记主动结束，不计胜负、完成场次或通关成就，已达成的单题/连击成就仍可保存；已造成击倒则正常判胜负。结算取消自动推进且仅执行一次。
 
 本地正确率 50%/72%/88%/97%，模拟时间 12-24/8-18/4-12/2-7 秒；API 等级控制检查要求和时间，不保证正确率。输出绑定题目、选项、模拟时间与简短摘要。读题、比较、选择检查是替换式活动展示，不是内部思维直播。双方结束前隐藏答案相关内容，之后显示已保存决策及独立题库解析，不事后另编理由。
 
-API 可传标记过的题干/选项图，不传答案键/解析；图必须在项目内，格式 PNG/JPEG/GIF/WebP，单图 8 MiB、总 16 MiB。官方图片请求使用 deepseek-flash，自定义服务需视觉模型；结构化输出 800 tokens。失败、非法及截止时间到达后返回的决策使该轮作废，不计分不扣血并可重试。模型可能出错；在线多人和技能卡为后续功能。
+API 可传标记过的题干/选项图，不传答案键/解析；图必须在项目内，格式 PNG/JPEG/GIF/WebP，单图 8 MiB、总 16 MiB。官方图片请求使用 deepseek-flash，自定义服务需视觉模型；结构化输出 800 tokens。失败、非法及截止时间到达后返回的决策使该轮作废，不计分不扣血并可重试。模型可能出错；海克斯强化选择已实现，在线多人仍未实现。
 
 #### FR-18：英文导出与时间
 
@@ -266,6 +270,31 @@ CSV 使用 UTF-8 BOM 并防公式前缀；生成及记录时间统一本机时�
 
 ### 5. 边界与历史
 
-不宣称已实现云同步、自助找回、在线多人、未完成会话恢复、自适应引擎、自动生成题库、技能卡或通用公开发布流程。原子 JSON 不是多进程锁；可有未引用图片。API 延迟、正确率及识图质量不保证；MAT009 返回 5 与三段摘要只是单题联通验证。
+不宣称已实现云同步、自助找回、在线多人、未完成会话恢复、自适应引擎、自动生成题库或通用公开发布流程。原子 JSON 不是多进程锁；可有未引用图片。API 延迟、正确率及识图质量不保证；MAT009 返回 5 与三段摘要只是单题联通验证。
 
-保留原 CLI/桌面历史、迁移账户、原题库和变更记录。结合[实现对应](docs/SRS.md)、[README](README.md)、[变更](docs/CHANGELOG.md)和[测试报告](docs/TEST_REPORT.md)阅读；旧文档作为历史证据，不作为当前权限或功能规则。
+保留原 CLI/桌面历史、迁移账户、原题库和变更记录。结合[实现对应](SRS.md)、[README](README.md)、[变更](CHANGELOG.md)和[测试报告](TEST_REPORT.md)阅读；旧文档作为历史证据，不作为当前权限或功能规则。
+
+
+## Review clarifications / 审查补充 · 2026-11-21
+
+- Cancelling animations must remove every active overlay; completing one animation must preserve other active overlays.
+- Battle skin selection and portrait loading use the unified skin registry, with default-image and legacy-registry fallbacks.
+- Augment rewards and streaks use the time-validated answer result. A late correct option earns no reward and breaks the streak; the exact deadline remains accepted by the base grading rule.
+
+- 取消动画须清理全部活动遮罩；单个动画完成不得误删其他活动遮罩。
+- 对战皮肤选择与立绘加载统一读取皮肤注册表，并保留默认图片和旧注册表回退。
+- 海克斯奖励与连击依据时限校验后的答题结果；超时选对不加分且中断连击，恰好截止时刻按基础计分规则接受。
+
+
+### Animated page scrolling / 动画页面滚动 · 2026-11-21
+
+Settings, Notebook and History must remain scrollable after navigation with animations enabled, without requiring a window resize. Scroll extents must be recalculated after page construction and descendant layout changes; short pages may still fill the viewport.
+
+开启动画时，设置、错题本和学习记录在切页后无需调整窗口即可滚动；页面构建完成及内容控件布局变化后须更新滚动范围，短页仍可铺满视口。
+
+
+### Augment draft / 强化抽取 · 2026-11-21
+
+Offer three distinct augments sampled without replacement using the configured card weights. Rarity slots are not fixed; multiple cards of one rarity may appear. Three consecutive normal drafts without a Demon guarantee one on the fourth; any Demon resets the persistent per-account counter. Demo draft guarantees one without affecting normal progress.
+
+每局按卡牌权重不放回抽三张不同强化供三选一，不固定稀有度，可同档多张，连续三次普通抽卡未出魔王则第四次必出，出现即重置；按实际发牌次数计数，账号隔离并持久化。设置中的“演示抽卡”必含魔王，不影响普通保底，重新打开设置默认关闭。

@@ -14,11 +14,11 @@
 | `assets/images/questions/` | 建议按 `{id}.png` 存放题目插图 |
 | `assets/circle.png` / `assets/square.png` | 题库中已有几何题插图 |
 
-命名建议：`assets/images/questions/ENG001.png`
+命名建议：`assets/images/questions/ENG002.png`
 
 ## 当前题库状态
 
-已用 `scripts/generate_question_art.py` 为全部 60 道题生成扁平教育插画，路径为 `assets/images/questions/{id}.png`。  
+已用 `scripts/generate_question_art.py` 为当前 58 道题生成扁平教育插画，路径为 `assets/images/questions/{id}.png`。  
 `MAT003` 仍使用原有 `assets/circle.png`（与选项图一致）；其余题目已写入对应 `question_image`。  
 如需更精细的写实插画，可替换同名 PNG，无需改代码。
 
@@ -28,7 +28,6 @@
 
 | ID | 建议插图主题 | 建议路径 |
 |----|--------------|----------|
-| ENG001 | 苹果 | `assets/images/questions/ENG001.png` |
 | ENG002 | 冷热对比 | `assets/images/questions/ENG002.png` |
 | ENG003–ENG020 | 按题干主题（词汇/语法） | `assets/images/questions/{id}.png` |
 

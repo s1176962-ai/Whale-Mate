@@ -6,13 +6,13 @@ import unittest
 from pathlib import Path
 
 from learning_platform.image_cache import portrait_image, source_image
+from tests import fresh_tk_root
 
 
 class ImageCacheTests(unittest.TestCase):
     def test_source_and_portrait_reuse_and_bound(self):
-        root = tk.Tk()
+        root = fresh_tk_root()
         root.withdraw()
-        self.addCleanup(root.destroy)
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "sprite.png"
             image = tk.PhotoImage(master=root, width=6, height=2)

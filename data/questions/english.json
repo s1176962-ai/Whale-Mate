@@ -1,22 +1,5 @@
 [
   {
-    "id": "ENG001",
-    "subject": "English",
-    "topic": "Vocabulary",
-    "difficulty": "easy",
-    "type": "single_choice",
-    "question": "What is the meaning of apple?",
-    "options": [
-      "苹果",
-      "香蕉",
-      "橙子"
-    ],
-    "answer": "苹果",
-    "explanation": "Apple means 苹果 in Chinese.",
-    "question_image": "assets/images/questions/ENG001.png",
-    "option_images": null
-  },
-  {
     "id": "ENG002",
     "subject": "English",
     "topic": "Vocabulary",

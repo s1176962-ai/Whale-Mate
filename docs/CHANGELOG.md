@@ -1,5 +1,211 @@
 # 变更记录
 
+## 魔王保底与演示抽卡 · 2026-11-21
+
+- 普通抽卡连续三次未出现魔王后，第四次必含魔王；出现即重置。按实际打开抽卡页的发牌次数计算，不要求选中魔王；按账号持久化，访客进度单独保存。
+- 对战设置新增“演示抽卡：魔王必出”，重新进入设置默认关闭；演示抽卡不读写普通保底进度，仍为三张不同卡牌。
+- 抽卡页显示保底剩余次数或演示标记；本机访客保底存档加入 Git 忽略规则。
+
+## 无限模式主动结算与暂停提示 · 2026-11-21
+
+- 无限对战揭晓后提供“结束并结算”，作答期间禁用；主动结束只汇总已结算回合，不计胜负/完成场次或通关成就，单题/连击成就可保存。血量归零仍正常结算，取消自动推进并防止重复结算。
+- 暂停按钮旁说明作答、等待、自动推进、答错暂停、手动暂停和异常重试状态，提示空格操作；无限模式题号跨牌堆累计。
+- BATTLE.md 重整为双语当前规则，旧迭代归档；README、specification、SRS 与索引同步，移除固定 30 秒、四选一、三倍伤害及手动继续等旧规则混用。
+
+## 海克斯随机三选一 · 2026-11-21
+
+- 取消四选一及固定每档一张，改用卡牌已有权重，从全池不放回抽三张。每手卡牌不重复，允许同稀有度多张，不保证出现魔王。
+- 同步中英文提示与规则文档，回归覆盖数量、重复、稀有度变化及权重。
+
+## 开启动画时 Settings / Notebook 滚动修复 · 2026-11-21
+
+- 根因：页面渐入动画提前刷新空容器布局，使滚动主体固定为视口高度；新内容增长后主体尺寸不变，原来的 Configure 监听无法更新滚动范围。
+- 页面重建后在空闲阶段重新测量内容，并合并主体内子控件的布局变化，更新主体高度和滚动区域；保留短页铺满视口的行为。关闭窗口时取消待处理的布局回调。
+- 回归覆盖开启动画、固定窗口尺寸下 Settings → Notebook → History → Settings 的切换、滚轮滚动和底部可达性。
+
+## 审查问题修复 · 2026-11-21
+
+- 动画管理器跟踪全部活动遮罩；取消动画时统一销毁，避免并发动画留下遮挡层。单个动画完成仅清理自己的遮罩。
+- 对战皮肤选择、难度默认值及立绘加载优先使用统一皮肤注册表；缺图回退默认皮肤，保留旧注册表兼容。
+- 海克斯奖励与连击使用时限校验后的正确状态；超时点击正确选项不加分，并打断连击。
+- 新增遮罩并发取消、统一注册表自定义皮肤端到端加载、旧注册表兼容及超时计分回归测试。
+
+## 尊重题库删题 + 测试去 ID 硬编码 · 2026-11-20
+
+- 撤回上一轮误操作：ENG001（英文题配中文选项）与 MAT012（分数用 `3/4`、`15/8` 纯文本展示）是用户有意删除的展示问题题，不应从版本库恢复；题库恢复为 19 + 19 + 20 = 58 题。
+- `tests/test_core.py` 不再写死 60 题，改为断言 58 题与「答案必在选项内」不变量；`test_personal_and_plan.py` 的公共题冲突样例从 ENG001 换成仍在库的 ENG002。
+- `tests/test_roles_and_language.py` 与 `docs/DESIGN.md` 删除对已不存在题目的具体引用，改为通用表述；旧条目里「恢复误删 MAT012」的说明同步标注为已撤回。
+
+## 难度加权抽题 + 分难度计时 + 魔王效果重做 · 2026-11-20
+
+- **按对手难度加权抽题**：`services.select_questions_weighted()` 按 easy/medium/hard 桶权重抽题，推荐梯度入门 70/25/5、普通 40/45/15、困难 15/45/40、地狱 5/25/70；缺桶时权重重新分配，不放回抽取。`battle_ui._prepare_match()` / ∞ 模式重洗统一改走该函数，普通练习页仍用原来的精确筛选。
+- **题目难度决定时间**：`battle.py` 新增 `QUESTION_SECONDS`（easy 25s / medium 30s / hard 45s）与 `speed_bands()`；速度分阈值按比例缩放（25s→4/8/12/17/25，45s→8/15/23/30/45）。`grade(..., bands=...)` 兼容旧调用；双方计时都按题目难度取窗口，海克斯只作用玩家侧。
+- **魔王契约重做**：`AugmentRuntime.limit_for(base)` 取代固定 7 秒，魔王玩家时间 = 本题 base 的 50%；`player_score()` 把本题总得分整体 ×3（100+50→450），原「造成伤害 ×3」特殊逻辑移除，伤害回归分差自然结算。卡牌描述、结算提示、英文文案同步更新；飘字「×3」保留但含义改为得分。
+- 测试：新增/更新加权分布、分难度时钟与速度分、魔王 50%/总分×3 的规则与 GUI 回归；全套 unittest 通过。BATTLE.md 同步。
+
+## 对战设置页紧凑单行布局 + 恢复开始按钮 · 2026-11-20
+
+- 用户反馈设置页四个筛选项（题库/科目/主题/题量）各占满一整行，占篇幅过大，且「开始对战」按钮不见。
+- `BattlePage.setup()` 把四个筛选项改成 4 列 `uniform` grid，统一同一行、等宽并顶部对齐；「更多设置」的对手等级/初始血量/AI 也改为 3 列同行。Segmented/Canvas 初始请求宽度设为 1，标题与题量提示按单元格实际宽度动态换行，避免窄窗口横向溢出。
+- 根因：按钮原先 `app.button()` 挂在滚动 body 上、排在 `expand=True` 的 SoftCard 之后，被挤出视口。现在「开始对战」/「成就」放在卡片内部底部操作条，`start_button` / `achievement_button` 可回归测试。
+- 题量标签精简为 `3 / 5 / 10 / ∞`，说明文字缩短为「匹配 N 题 / ∞：打到血量归零」；题库分段标签精简（公共 / Mine）；去掉冗余规则长文案。`modern.Segmented._draw()` 增加按段宽测量并自动降字号/省略号，防止窄列内文字重叠。
+- 新增英文文案（Public/Mine/我的、短题量提示、短规则说明）；新增回归测试 `test_battle_setup_filters_share_one_row_and_actions_stay_in_card` 校验同行列号与按钮归属。全套测试与语法检查通过。
+
+## 结算页成就 + 成就换行 + 对战设置重排 + 组件失效修复 + 重置成就 · 2026-11-20
+
+- **结算页展示本局成就**：`BattlePage.advance()` 把 `unlocked` 提前初始化，结算页在分割比分/海克斯卡下方用与成就墙相同的 `AchievementCard` 两列网格列出本局新解锁的徽章（标题「本局解锁的成就」）；访客不落盘则为空。新增英文文案。
+- **成就描述换行修复**：`achievement_ui._wrap()` 原来按 24 字符硬切且只取两行，英文单词被从中间劈开（Hell-di/fficulty、corre/ctly）。改为 `_wrap_pixels()`：用 Tk `font measure` 按像素宽、按空格分词换行，长单词/中文再逐字兜底，最多 3 行；卡片高度 116→132。验证所有英文描述均不断词、不丢行。
+- **对战设置页重排**：`BattlePage.setup()` 改为卡片式，顺序为题库（公共/个人 Segmented）→ 科目（Dropdown）→ 主题（Dropdown，随科目联动）→ 题量（3/5/10/∞ Segmented）→ 更多设置（对手等级/初始血量/AI）→ 按钮。新增状态变量/联动方法（题库切换重置科目主题、科目切换刷新主题、题量提示匹配数），筛选值跨重建保留（battle page 切换海克斯选择会重建 setup）。
+- **∞ 无限题量**：`_prepare_match()` 在 `count=="∞"` 时设为 `self.infinite=True` 并取全部匹配题；`advance()` 在题数用尽但双方仍有血时重新洗牌、`index=0` 继续，直到一方血量归零才进结算。`__init__` 初始化 `infinite=False`。
+- **关键 bug 修复：Configure/对战设置页组件全部失效**（只有 Subject 能点）。根因：`modern.Interactive._face_current()` 无条件调用 `self._face()`，但 `Segmented`/`Stepper`/`Dropdown`/`Toggle` 都没定义 `_face()`，press/release 回调在 `_activate()` 之前抛 `AttributeError`，控件全部静默失效。改为 `getattr(self,"_face",None)` 安全调用（与 `_animate_face` 的 `hasattr` 保护一致）。实战诊断确认修复：难度 0→hard、限时 0→1 均生效。新增回归测试 `test_interactive_controls_without_face_still_activate` 锁住。
+- **设置页重置成就**：`AchievementStore.reset()` 用全新默认文档清空解锁与统计（不改类级 DEFAULT，返回清除数量）；Settings 新增「成就」卡片 + 「重置本账号成就」按钮，`_reset_achievements()` 带确认对话框、访客守卫、错误提示。8 条英文文案补齐。
+- 测试：新增/重写多个用例（∞ 循环、设置页控件、reset、成就换行相关），全套 **189 项通过**，语法检查通过。文档同步。
+
+## 可换肤立绘皮肤包 + hell 补齐三态 · 2026-11-20
+
+- 用户要求补齐 hell 模式的一般 / 答对 / 答错立绘，并按换肤结构存储以便将来开放换肤功能。
+- 新增两张素材抠图（泛洪从边缘去背、羽化 0.6px、裁透明边）：黑底愤怒脸 → `hell/normal.png`；白底左右合图在 x=890 切开 → `hell/correct.png`（绿勾）/ `hell/wrong.png`（红叉）。保护了气泡白底、白发、星星、白色描边等内部白色。
+- **皮肤包结构**：`assets/battle/skins/{default,hell}/` 各含 7 张独立透明 PNG（normal/thinking/correct/wrong/attack/attacked/die），`skin_registry.json` 声明清单与文件映射。default 由旧 `expressions.png` 三帧 + `ai_assistant_*.png` 迁移，normal 复用 thinking；hell 由原四张 + 新三张组成。删除旧 `assets/battle/hell/` 目录。
+- 新增 `learning_platform/skins.py`：`load_registry()`（缓存）、`skin_for_difficulty()`（地狱→hell）、`portrait_path()`（请求皮肤→default→旧扁平文件逐级回退）、`available_skins()` / `is_sheet()`。
+- `battle_ui.py`：`_skin_id` / `_hell_art` 改走皮肤模块，`_portrait_source()` 统一从皮肤包解析（独立 PNG，`sheet=False`）。
+- 测试：重写 `test_hell_difficulty_uses_hell_skin_pack`，新增 `test_skin_packs_have_all_states` / `test_skin_store_difficulty_and_fallback`。全套 182 项通过。文档 ASSET_IMAGES / BATTLE 同步。
+
+## 地狱难度替换 hell 立绘 · 2026-11-20
+
+- 用户提供四张 hell 风格立绘（黑红哥特洛丽塔），要求地狱难度对手换成这套。
+- 抠图：四张 JPG（三白底 + attack 黑底）用泛洪填充从边缘去背、边缘羽化 0.6px、裁透明边，输出 `assets/battle/hell/hell_{thinking,die,attack,attacked}.png`（RGBA）。泛洪只删连通边缘的纯色，保留角色内部白色（眼睛高光、小天使、能量波）。
+- `battle_ui.py` 新增 `_hell_art` / `_portrait_source()`：地狱难度时 thinking/attack/attacked/die 走 hell PNG（单帧 `sheet=False`）；correct/wrong 不在 hell 套内，回退原 `expressions.png` 雪碧图；文件缺失也回退普通立绘，避免空图。`show_expression()` 统一走 `_portrait_source()`。
+- 新增 `test_hell_difficulty_uses_alternate_portraits`；全套 180 项通过。
+
+## 血条与卡片中间分界对齐 · 2026-11-20
+
+- 用户发青线标注图：血条行与卡片行的左边缘/右边缘/中间分界应对齐，指出中间错位约 48px、右侧约 18px。
+- 根因：血条用对称 padx `(0,SPACE_2)`+`(SPACE_2,0)`，而卡片用不对称的 `(0,SPACE_3)`+`(0,0)`——右卡比左卡宽 12px、中间缝偏移。
+- `battle_ui.round()` 改为两卡复用血条的对称列结构：左卡 `(0,SPACE_2)`、右卡 `(SPACE_2,0)`，两列等权。canvas bbox 换算实测血条与卡片同为 x=288→1072、中间缝中心同为 x=680。
+- 回归测试新增等宽 + 对称 padx 断言；全套 179 项通过。
+
+## 底部 dock 对称网格重构 · 2026-11-20
+
+- 用户反馈底部左右下角的得分卡文字/数字框与中间对战数据框挤在同一水平带，content 被夹住看不清，且嫌布局是硬编码像素、不像 HTML 自适应。
+- `battle_ui.py` 底部 dock 改为两行对称 grid：col0/col2 用 `uniform="score"` 放左右得分卡（等宽镜像），col1 `weight=1`（等价 CSS `flex:1`）自适应；row0 放 clock，row1 放下移的对战数据输出框。数据框不再与得分卡同一水平带。
+- clock 层级少一层（clock→panel→dock），同步更新测试断言；新增对称列、数据框下移行的断言。全套 179 项通过。
+- 实测：左右卡各 218px 关于中心对称，中间列 572px 自适应，数据框 y 低于 clock，无重叠。
+
+## 对齐问题二次修复（滚动条场景）· 2026-11-20
+
+- 用户反馈上一轮「都设 SPACE_4」后右侧仍内缩约 30px。根因：① 垂直滚动条只压缩 `canvas` 不压缩 `outer`，按 canvas 宽算的 body 少一截；② body frame 的横向 padding 与 canvas window 的 inset 叠加。
+- `Application` 新增 `_body_match_outer`，`set_body_side_pad(px, match_outer=True)`；`_on_canvas_configure` 在 battle 页改用 `outer.winfo_width()` 计算 `content_w`，`clear()` 复位。battle `round()` 把 body padding 改为 `(0, SPACE_1)`，只保留 canvas window 一层 inset。
+- 回归测试改用 canvas bbox 比较（root 坐标对 canvas 内嵌控件有 −16px 偏差，不可靠）；实测有/无滚动条两种状态下血条与题目卡左右边缘完全重合。全套 179 项通过。
+
+## 题目卡对齐血条 + 中间文字真正居中 · 2026-11-20
+
+- 修复题目卡比血条窄约 64px 的错位：`Application._body_side_pad` / `set_body_side_pad()` 让 battle 页的 canvas window 与 body frame 横向内边距同时用 `SPACE_4`（与固定 header/dock 一致），`clear()` 复位 `PAGE_PAD`。两张题目卡现与血条共享完全相同的左右外边缘。
+- 修复中间「正确答案 + 解析」未居中：tk.Text 内建 `all` tag 在本平台不响应 `justify`；改用具名 tag `aligned` 并覆盖到 `end`（含尾换行），短行实测已居中。
+- 新增回归测试，全套 179 项通过。
+
+## 得分卡布局精修 · 2026-11-20
+
+- `ScoreCard` 四个分段框改为常驻（未结算用「·」占位）；正确/速度/加成/总分的描述上移到各自框正上方，整行在 Canvas 内水平居中，去掉与血条重复的「{名字} · 得分」标题。
+- 中间对战数据列的全部文字居中：`AssistantReply` 支持 `justify`，tk.Text 通过内置 `"all"` tag 设置对齐（无 widget 级 `-justify` 选项）。
+- 全套 178 项测试通过。
+
+## 对战页固定状态栏 + 题面免滚动 · 2026-11-20
+
+- 新增 `Application._battle_header()`，把海克斯横幅 + 双方血条钉在 Quiz battle 白线下方（挂 `outer`，不随题面滚动）；`clear()` 切页时一并销毁。血条高度 44→34、`BAR_H` 14→12。
+- 题数/计时器 `self.clock` 从随滚动的 body 顶部移到底部控制台中间列（`Question.TLabel`），两侧分段得分卡压到 44px、中间对战数据 2–4 行，三栏都保留但明显变矮。
+- 压缩题干区：卡片内边距、AI 思考区高度 7→5、立绘 190→160、题图宽度 280→160、选项 pady 2px、body padding 收到 `SPACE_1`。1100×760 下 body 请求高度与视口齐平，右侧无滚动条，题目与全部选项一屏可见。
+- 新增回归测试 `test_battle_header_fixed_and_clock_in_dock` 验证固定头部层级、clock 归属与高度压缩。全套 178 项通过。
+
+## 对战底部三栏结算面板 + 血条并排 · 2026-11-20
+
+- 按用户参考图把顶部双方血条从「上下两行」改回「左右并排同一行」：两列等宽 grid（`row=0`，`column=0/1`），各自仍是名字 + ♥ + 血条 + 数值，几何完全对齐。
+- 底部结算从一整块纯文本改为三栏面板：左右是 `battle_result.ScoreCard` 分段得分卡（正确 + 速度 + 加成 = 总分，四段各自带框、总分用强调色），中间是「对战数据」对话框只放正确答案 + 解析 + 海克斯提示，去掉冗余得分算式。保留 `self.result` 组件与测试接口。
+- 新增英文文案（`{0} · 得分`、`等待结算`、`速度`、`加成`、`对战数据`）。回归测试补充血条并排几何断言、分段得分卡数值/帧结构、对话框不再含得分算式。全套 177 项通过。
+
+## 成就徽章边框对齐海克斯卡牌 · 2026-11-20
+
+- 成就卡边框改为与海克斯卡牌完全相同的机制：用 `augment_ui._rounded_points()` 采样圆角周长，逐段 `create_line()` 绘制（24 段），不再用单个 `round_rect(outline=...)` 平描边。
+- 棱彩 / 魔王解锁后跑 `edge_colors()` 逐段流光（魔王红白高光、棱彩彩虹），与卡牌 `_shimmer()` 一致；锁定的魔王保留暗色流光，白银 / 黄金及锁定棱彩为静态分段等级色边框。
+- 回归测试 `test_locked_badge_shows_tier_border_and_label` 增加断言：锁定卡与棱彩解锁卡都具备多段 line 边框，棱彩各段颜色不统一。
+
+## 成就达成条件常显 · 2026-11-20
+
+- 未解锁的成就卡不再隐藏达成条件：现在解锁 / 未解锁都显示成就名称、等级标签和达成条件（`description`），未解锁仅以暗色等级色调 + 右上角「未解锁」标记区分，解锁则显示完整配色和 ✓。边框等级色、魔王档流光等既有视觉保持不变。
+- 回归测试 `test_locked_badge_shows_tier_border_and_label` 增加断言：锁定卡也必须渲染达成条件文案。
+
+## 魔王契约飘字崩溃修复 · 2026-11-20
+
+- 修复"选魔王海克斯后一堆 bug"的根因：动效开启时，`_stage_damage()` 调用 `ai_bar.float_text("×3")`，而 `battle_fx.py` 引用的是原始 `tokens` 门面（颜色只存在于 `palette()`），飘字帧里却写了 `T.BG`，同步抛出 `AttributeError: module 'learning_platform.tokens' has no attribute 'BG'`，直接中断 `finish_round()`（结果文本不显示、自动进题失效）。改为 `T.palette()["BG"]`，与同文件其余取色方式一致。
+- 修复次生问题：血条数值补间的每一帧都会 `delete("all")` 重绘，把刚创建的 ×3 飘字一起抹掉，导致"三倍伤害特效没生效"。现在只删除带 `bar` tag 的血条本体，飘字带 `float` tag 得以完整播放。
+- 新增回归测试 `test_demon_damage_float_with_motion_enabled`：强制动效开启走 `tween.frame(0)` 路径（旧测试在动效关闭下走 `after` 分支，漏掉了该 bug），验证 `finish_round()` 不再抛异常、飘字实际绘出。回退到旧代码时该测试能精确复现同样的 `AttributeError`。
+- 曾临时恢复 MAT012 以消除当时的 core 测试失败；后确认该题由用户有意删除，已在后续条目撤回。
+- 全套回归 177 项通过。
+
+## Tk 测试偶发 TclError 根治 · 2026-11-20
+
+- 说明此前所谓"偶发错误"的真实形态：全套测试连续创建 / 销毁约 170 个 Tk root 后，Windows Tcl/Tk 出现 `_tkinter.TclError: invalid command name "tcl_findLibrary"`、`tk.tcl` 无法 source、`image create photo` 失败；每次落在不同测试，重跑即过。
+- 测试层改为进程内单一隐藏 Tk root（`tests/__init__.py` 的 `fresh_tk_root()`）：每例前取消残留 `after`、解绑根与全部子控件的 Python 回调、销毁旧控件，再复用同一个解释器；6 个 GUI 测试模块统一接入，不再反复初始化 Tcl。
+- 应用层加固：登录页装饰图改走有界 `image_cache.source_image()`，并对 `TclError / OSError / ValueError` 静默降级；同一 root 上的第二个 `Application` 复用根级勾选图与 `Checkmark.indicator` 元素，避免 "Duplicate element" 错误。
+- 连续多次运行 `py -3 -m unittest discover -s tests` 全绿且无残留 `Exception in Tkinter callback`，测试耗时也明显下降。
+
+## 魔王回合计分修正与血条对齐验证 · 2026-11-20
+
+- 修复魔王契约下大肥鱼答对却计 0 分、文字标红的问题：7 秒限时只约束玩家，对手仍按原 30 秒响应截止与计分窗口判定，不再被玩家限时误伤。
+- 双方血条继续共用按字体实测的统一名字列宽，新增轨道细描边，并把血条起点、终点和数值 x 坐标写入控件属性，回归测试直接验证两行几何完全一致。
+- `docs/BATTLE.md` 同步说明玩家 / 对手两套时间边界；新增魔王慢速正确作答的 GUI 回归用例。
+
+## Demon border polish and badge presentation · 2026-11-20
+
+- Reworked the Demon border into a deep-red edge with a travelling white/red highlight, replacing the harsh per-segment black/white/red strobe.
+- Achievement badges are now ordered by tier (Demon > Prismatic > Gold > Silver); locked badges show a tier-tinted border and the tier label, unlocked badges show full text, colours and check mark.
+- Demonic Pact now shows an explicit triple-damage note and floating "x3" numbers over the opponent's health bar.
+
+## 魔王边框打磨与成就展示 · 2026-11-20
+
+- 魔王边框改为深红底 + 白/红高光流动，取代原先生硬的黑白红跳色。
+- 成就按稀有度降序排列；未解锁显示等级色边框与等级标签，解锁后显示完整文字与背景色。
+- 魔王契约三倍伤害补上结算提示与对手血条上的「×3」飘字。
+
+
+## Demon-tier augment · 2026-11-20
+
+- Added a fourth rarity above Prismatic -- Demon. The augment draft is now one card per tier (Silver / Gold / Prismatic / Demon).
+- Added the "Demonic Pact" augment: 7-second rounds in exchange for triple damage dealt (damage taken is unchanged).
+- Demon tier and the Demon Slayer badge now use a black / white / red strobe border on cards, banners, badge wall and unlock toasts.
+
+## 魔王档海克斯 · 2026-11-20
+
+- 新增凌驾棱彩之上的第四档稀有度「魔王」，发牌改为四档各一张；新增魔王契约卡（7 秒限时、造成伤害三倍，自身受伤不变）。
+- 魔王档与「大魔王猎手」徽章统一使用黑白红交替闪烁边框，覆盖卡牌、每轮横幅、徽章墙与解锁弹窗。
+
+
+## Hextech augments, damage staging and achievements · 2026-11-20
+
+- AI battle now opens with a three-card Hextech augment draft (Silver / Gold / Prismatic), one card per tier; selected effects last the whole match and are applied through a single runtime.
+- Replaced numeric HP text with animated Canvas health bars, added Big Whale damage poses (attacked / die / attack) from transparent PNGs, and auto-advance to the next question after a short hold with a "loading next question" hint.
+- Added an achievement system with 8 badges, per-account JSON persistence, instant unlock toasts and a dedicated sidebar badge wall.
+
+## 海克斯强化、掉血演出与成就系统 · 2026-11-20
+
+- 答题对战新增开局三选一海克斯强化（白银 / 黄金 / 棱彩），每档一张、整局生效，统一由效果运行时承接。
+- 血量改为带补间的 Canvas 血条（两条对齐同一列、不遮挡名字），新增大肥鱼被砸 / 倒地 / 喷水三种动作立绘（透明 PNG），结算停留 3 秒后自动进下一题并显示提示。
+- 新增成就系统：8 枚徽章、按账号 JSON 持久化、解锁瞬间弹窗提示；入口在对战设置页并可原路返回，徽章绑定账号，游客显示注册引导。
+
+
+## Documentation consolidation · 2026-11-19
+
+- Moved the root README, design guide, specification, contribution guide and original prompt into docs; moved the image directory guide to ASSET_IMAGES.md.
+- Added a documentation index, AGENTS.md, a code of conduct and an all-rights-reserved LICENSE; updated relative links in current documentation.
+- Kept archives, the runtime dependency list and sample exports in their existing locations.
+- Provided the newly added guidance in English first, followed by Chinese.
+
+## 文档集中整理 · 2026-11-19
+
+- 将根目录的 README、设计说明、需求规格、贡献指南和原始提示词集中到 docs；图片目录说明迁入 ASSET_IMAGES.md。
+- 新增文档索引、AGENTS.md、行为准则及保留所有权利的 LICENSE，更新当前文档相对链接。
+- 保留归档目录、运行依赖清单及示例导出文件的位置。
+- 新增说明采用英语优先、中英双语。
+
 ## Portable one-file build · 2026-11-16
 
 - Added `WhaleMate.spec` and `build_exe.bat`: a windowed single-file Windows exe (~38 MB) bundling Python 3.13, Tcl/Tk, ReportLab, question banks and artwork.

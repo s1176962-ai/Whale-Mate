@@ -23,6 +23,59 @@ def select_questions(questions, subject=None, topic=None, difficulty=None, count
     return (rng or random).sample(matches, min(count, len(matches)))
 
 
+# Per-difficulty draw weights for battle matches: easy / medium / hard.
+# Tougher opponents see harder questions more often, but every tier keeps
+# some mix so a match never becomes monotonous.
+DIFFICULTY_WEIGHTS = {
+    "入门级": {"easy": 70, "medium": 25, "hard": 5},
+    "普通级": {"easy": 40, "medium": 45, "hard": 15},
+    "困难": {"easy": 15, "medium": 45, "hard": 40},
+    "地狱": {"easy": 5, "medium": 25, "hard": 70},
+}
+
+
+def select_questions_weighted(
+    questions, level, subject=None, topic=None, count=5, rng=None
+):
+    """Draw questions with a difficulty bias driven by the opponent level.
+
+    The weights apply to the *difficulty bucket*, not to raw question count,
+    so an uneven bank does not silently override the intended mix. When a
+    bucket runs dry its remaining weight is redistributed across the buckets
+    that still have questions. Drawing is without replacement.
+    """
+    if type(count) is not int or count < 1:
+        raise ValueError("Question count must be a positive integer")
+    generator = rng or random
+    matches = [
+        q
+        for q in questions
+        if (subject is None or q.subject == subject)
+        and (topic is None or q.topic == topic)
+    ]
+    if not matches:
+        raise ValueError("No questions match these settings")
+
+    buckets = {}
+    for question in matches:
+        buckets.setdefault(getattr(question, "difficulty", None), []).append(question)
+    weights = DIFFICULTY_WEIGHTS.get(level, DIFFICULTY_WEIGHTS["普通级"])
+    target = min(count, len(matches))
+    picked = []
+    while len(picked) < target:
+        available = [(name, pool) for name, pool in buckets.items() if pool]
+        if not available:
+            break
+        total = sum(weights.get(name, 1) for name, _ in available)
+        ticket = generator.random() * total
+        for name, pool in available:
+            ticket -= weights.get(name, 1)
+            if ticket <= 0:
+                break
+        picked.append(pool.pop(generator.randrange(len(pool))))
+    return picked
+
+
 def image_path(root, value):
     """Only local assets under the project root are supported."""
     root = Path(root).resolve()

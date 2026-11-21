@@ -1,19 +1,18 @@
 import tempfile
-import tkinter as tk
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from learning_platform.gui import Application
 from learning_platform.repositories import PersonalQuestionRepository
+from tests import fresh_tk_root
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class ImportUiTests(unittest.TestCase):
     def test_personal_preview_confirm_and_failed_replacement(self):
-        root = tk.Tk()
-        self.addCleanup(root.destroy)
+        root = fresh_tk_root()
         root.withdraw()
         with tempfile.TemporaryDirectory() as folder:
             app = Application(root, progress_path=Path(folder) / "progress.json")

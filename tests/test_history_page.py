@@ -1,17 +1,16 @@
 import tempfile
-import tkinter as tk
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from learning_platform.gui import Application
 from learning_platform.repositories import ProgressRepository
+from tests import fresh_tk_root
 
 
 class HistoryPageTests(unittest.TestCase):
     def test_filtered_journal_includes_notes_and_like(self):
-        root = tk.Tk()
-        self.addCleanup(root.destroy)
+        root = fresh_tk_root()
         root.withdraw()
         with tempfile.TemporaryDirectory() as folder:
             app = Application(root, progress_path=Path(folder) / "progress.json")

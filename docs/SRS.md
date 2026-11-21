@@ -1,12 +1,12 @@
 # SRS Guide and Implementation Mapping
 
-Updated: 2026-11-13. English first, followed by Chinese.
+Updated: 2026-11-21. English first, followed by Chinese.
 
 ## English
 
 ### Authoritative requirements
 
-[specification.md](../specification.md) is the complete English-first bilingual SRS. Matching requirement IDs are used in both languages. This file explains implementation decisions and maps requirements to modules; it does not maintain a separate competing specification. The original guide is preserved in [the archive](archive/SRS_GUIDE_PRE_BILINGUAL_20261113.md).
+[specification.md](specification.md) is the complete English-first bilingual SRS. Matching requirement IDs are used in both languages. This file explains implementation decisions and maps requirements to modules; it does not maintain a separate competing specification. The original guide is preserved in [the archive](archive/SRS_GUIDE_PRE_BILINGUAL_20261113.md).
 
 ### Implementation decisions
 
@@ -20,6 +20,8 @@ Updated: 2026-11-13. English first, followed by Chinese.
 - Battle correctness and speed produce a score difference that reduces the losing side's HP. API failures, invalid decisions and late responses void the round without points or damage.
 - All fixed report text/metadata is English; source questions and notes retain their language. PDF/CSV timestamps use local `yyyy/mm/dd hh:mm:ss`, with the timezone labelled in PDF. Latin typography and Unicode fallback preserve full-width punctuation such as `！`.
 - Responsive controls, fixed quiz actions, bounded image caching and timer cleanup reduce unnecessary work without changing stored learning data. Settings support language, theme, window size and optional wheel selection.
+
+- Battles support weighted-random three-card augments, difficulty-scaled clocks, review-only pause/Space controls, and early settlement of infinite matches. [BATTLE.md](BATTLE.md) defines current rules and early-finish achievement restrictions.
 
 ### Requirement-to-module mapping
 
@@ -53,13 +55,13 @@ Updated: 2026-11-13. English first, followed by Chinese.
 
 Run `python -m unittest discover -s tests -v`, `python -m ruff check .` and `python -m compileall -q learning_platform tests`. Tests use temporary profiles and mocked networking where appropriate. Real API checks are reported separately and do not establish general model accuracy. Local files are not protected from someone with filesystem access, atomic writes do not provide multiprocess locking, and cancelled image edits may leave unused resources.
 
-See [README](../README.md), [test cases](TEST_CASES.md), [test report](TEST_REPORT.md), [development conventions](DEVELOPMENT.md), [battle rules](BATTLE.md), [import rules](QUESTION_BANK_IMPORT.md), [V2 integration history](V2_INTEGRATION.md) and [changelog](CHANGELOG.md).
+See [README](README.md), [test cases](TEST_CASES.md), [test report](TEST_REPORT.md), [development conventions](DEVELOPMENT.md), [battle rules](BATTLE.md), [import rules](QUESTION_BANK_IMPORT.md), [V2 integration history](V2_INTEGRATION.md) and [changelog](CHANGELOG.md).
 
 ## 中文
 
 ### 权威需求
 
-[specification.md](../specification.md) 是完整的英文优先双语 SRS，两种语言使用对应需求 ID。本文件记录实现决策及模块对应，不维护另一份有冲突的完整规格。原说明保存在[归档](archive/SRS_GUIDE_PRE_BILINGUAL_20261113.md)。
+[specification.md](specification.md) 是完整的英文优先双语 SRS，两种语言使用对应需求 ID。本文件记录实现决策及模块对应，不维护另一份有冲突的完整规格。原说明保存在[归档](archive/SRS_GUIDE_PRE_BILINGUAL_20261113.md)。
 
 ### 实现决策
 
@@ -73,6 +75,8 @@ See [README](../README.md), [test cases](TEST_CASES.md), [test report](TEST_REPO
 - 正确分和时间分形成分差并扣除低分方血量；失败、非法或迟到决策使轮次作废，不计分不扣血。
 - 固定报告文案和属性始终英文，题目和笔记保留原文；时间为本机 yyyy/mm/dd hh:mm:ss，PDF 标明时区。英文字体与 Unicode 回退保留全角 `！` 等字符。
 - 响应式控件、固定操作栏、有上限图片缓存与回调清理减少冗余，不修改学习数据；设置包含语言、主题、窗口和可选滚轮切换。
+
+- 对战支持随机三选一海克斯、按题目难度计时、仅揭晓后暂停与空格控制，以及无限模式主动结算；当前规则及主动结束的成就边界统一见 [BATTLE.md](BATTLE.md)。
 
 ### 需求与模块对应
 
@@ -106,4 +110,4 @@ See [README](../README.md), [test cases](TEST_CASES.md), [test report](TEST_REPO
 
 运行 `python -m unittest discover -s tests -v`、`python -m ruff check .` 及 `python -m compileall -q learning_platform tests`。测试使用临时账户和适当的模拟网络；真实联调单独记录，不代表普遍正确率。本地文件不防直接访问，原子写入不是多进程锁，取消图片编辑可留下未引用文件。
 
-参考 [README](../README.md)、[测试用例](TEST_CASES.md)、[测试报告](TEST_REPORT.md)、[开发规范](DEVELOPMENT.md)、[对战](BATTLE.md)、[导入](QUESTION_BANK_IMPORT.md)、[整合历史](V2_INTEGRATION.md)和[变更](CHANGELOG.md)。
+参考 [README](README.md)、[测试用例](TEST_CASES.md)、[测试报告](TEST_REPORT.md)、[开发规范](DEVELOPMENT.md)、[对战](BATTLE.md)、[导入](QUESTION_BANK_IMPORT.md)、[整合历史](V2_INTEGRATION.md)和[变更](CHANGELOG.md)。

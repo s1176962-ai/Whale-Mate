@@ -148,10 +148,10 @@ v2_5_quiz_and_i18n:
     large dead band below the form. Empty-state cards on notebook/history also
     expand to the viewport.
   question_content_exception: >
-    Question stems and options are data, not UI chrome. ENG001 deliberately
-    offers Chinese translations, so an English screen can still show Chinese
-    inside a question. This is intentional per the SRS ("question content
-    stays in its original language") and is not an i18n leak.
+    Question stems and options are data, not UI chrome; the UI i18n layer never
+    translates them. Questions whose text or artwork rendered poorly on screen
+    (e.g. ENG001 with Chinese answer options, MAT012 with slash-form fractions)
+    were removed from the sample banks rather than rewritten.
 
 v2_6_home_ai:
   palette: >

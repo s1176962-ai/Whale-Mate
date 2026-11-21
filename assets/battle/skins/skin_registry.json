@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "default_skin": "default",
+  "hell_skin": "hell",
+  "states": [
+    "normal",
+    "thinking",
+    "correct",
+    "wrong",
+    "attack",
+    "attacked",
+    "die"
+  ],
+  "skins": {
+    "default": {
+      "display": {
+        "zh": "默认",
+        "en": "Default"
+      },
+      "files": {
+        "normal": "default/normal.png",
+        "thinking": "default/thinking.png",
+        "correct": "default/correct.png",
+        "wrong": "default/wrong.png",
+        "attack": "default/attack.png",
+        "attacked": "default/attacked.png",
+        "die": "default/die.png"
+      }
+    },
+    "hell": {
+      "display": {
+        "zh": "地狱",
+        "en": "Hell"
+      },
+      "files": {
+        "normal": "hell/normal.png",
+        "thinking": "hell/thinking.png",
+        "correct": "hell/correct.png",
+        "wrong": "hell/wrong.png",
+        "attack": "hell/attack.png",
+        "attacked": "hell/attacked.png",
+        "die": "hell/die.png"
+      }
+    }
+  }
+}

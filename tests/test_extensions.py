@@ -14,6 +14,7 @@ from learning_platform.maintenance import QuestionEditor, import_image
 from learning_platform.repositories import ProgressRepository, QuestionRepository
 from learning_platform.services import QuizEngine
 from learning_platform.storage import DataError, JsonStore
+from tests import fresh_tk_root
 
 
 class ExtensionTests(unittest.TestCase):
@@ -121,11 +122,10 @@ class ExtensionGuiTests(unittest.TestCase):
         shutil.copytree(ROOT / "data/questions", self.folder / "data/questions")
         shutil.copytree(ROOT / "assets", self.folder / "assets")
         try:
-            self.root = tk.Tk()
+            self.root = fresh_tk_root()
         except tk.TclError as exc:
             self.skipTest(str(exc))
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
         self.app = Application(self.root, project_root=self.folder)
 
     def register(self, admin=False):

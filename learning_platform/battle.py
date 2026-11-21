@@ -17,6 +17,32 @@ PROFILES = {
 }
 ROUND_SECONDS = 30
 
+# Question difficulty drives the round clock. Speed bonuses are scaled to the
+# same window so a 45s hard question does not lose its final 15s of bonus.
+QUESTION_SECONDS = {"easy": 25, "medium": 30, "hard": 45}
+SPEED_BANDS = {
+    25: ((4, 50), (8, 40), (12, 30), (17, 20), (25, 10)),
+    30: ((5, 50), (10, 40), (15, 30), (20, 20), (30, 10)),
+    45: ((8, 50), (15, 40), (23, 30), (30, 20), (45, 10)),
+}
+
+
+def question_seconds(difficulty):
+    """Clock window for one question, defaulting to the legacy 30s."""
+    return QUESTION_SECONDS.get(difficulty, ROUND_SECONDS)
+
+
+def speed_bands(seconds):
+    """Speed-bonus thresholds for a window, including augment-scaled windows."""
+    if seconds in SPEED_BANDS:
+        return SPEED_BANDS[seconds]
+    return tuple(
+        (max(1, math.ceil(seconds * ratio)), points)
+        for ratio, points in (
+            (5 / 30, 50), (10 / 30, 40), (15 / 30, 30), (20 / 30, 20), (1.0, 10)
+        )
+    )
+
 
 def apply_damage(player_hp, ai_hp, player_score, ai_score):
     difference = player_score - ai_score
@@ -195,16 +221,18 @@ class BattleScore:
         return self.correct + self.time + self.extra
 
 
-def grade(correct, elapsed, extra=0):
-    """Wrong/late answers earn neither correctness nor speed points."""
-    if not correct or elapsed > ROUND_SECONDS:
+def grade(correct, elapsed, extra=0, limit=None, bands=None):
+    """Wrong/late answers earn neither correctness nor speed points.
+
+    ``limit`` sets the answer window; ``bands`` supplies scaled speed-bonus
+    thresholds. Callers that omit ``bands`` keep the original 30s behaviour.
+    """
+    window = ROUND_SECONDS if limit is None else limit
+    if not correct or elapsed > window:
         return BattleScore(0, 0, extra)
+    thresholds = SPEED_BANDS[ROUND_SECONDS] if bands is None else bands
     speed = next(
-        (
-            points
-            for limit, points in ((5, 50), (10, 40), (15, 30), (20, 20), (30, 10))
-            if elapsed <= limit
-        ),
+        (points for threshold, points in thresholds if elapsed <= threshold),
         0,
     )
     return BattleScore(100, speed, extra)

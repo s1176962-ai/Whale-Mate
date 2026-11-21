@@ -14,6 +14,22 @@ import tkinter as tk
 
 from . import ui_tokens as T
 
+# Shared Motion instance, installed by Application. Widgets use it so that the
+# in-app "motion off" setting also disables the button colour fades. When no
+# Motion is installed (standalone widgets / tests) every colour change is
+# instant, preserving the original behaviour exactly.
+_MOTION = None
+
+
+def set_motion(motion):
+    """Install the app's Motion so Canvas widgets can animate hover/press."""
+    global _MOTION
+    _MOTION = motion
+
+
+def _motion_active(widget):
+    return _MOTION is not None and _MOTION.active()
+
 
 def parent_bg(parent):
     """Return the parent's face colour so rounded corners blend into it."""
@@ -81,17 +97,24 @@ def round_rect(canvas, x1, y1, x2, y2, radius, fill=None, outline=None, width=1)
 class Interactive:
     """Shared hover / pressed / focus / disabled state machine."""
 
+    # Milliseconds for the button face colour fade. Short on purpose: it reads
+    # as a soft highlight, never as lag before the click registers.
+    FACE_FADE_MS = 140
+
     def _init_state(self, command=None):
         self._hover = False
         self._pressed = False
         self._focused = False
         self._disabled = False
         self._command = command
+        self._face_job = None
+        self._face_shown = None
         seen = set()
         for widget in (self, getattr(self, "canvas", None), getattr(self, "content", None)):
             if widget is None or id(widget) in seen:
                 continue
             seen.add(id(widget))
+            widget.bind("<Destroy>", self._on_face_destroy, add="+")
             widget.bind("<Enter>", self._st_enter, add="+")
             widget.bind("<Leave>", self._st_leave, add="+")
             widget.bind("<ButtonPress-1>", self._st_press, add="+")
@@ -99,14 +122,81 @@ class Interactive:
             widget.bind("<FocusIn>", self._st_focus_in, add="+")
             widget.bind("<FocusOut>", self._st_focus_out, add="+")
 
+    def _on_face_destroy(self, event):
+        if event.widget is not self:
+            return
+        if self._face_job is not None:
+            try:
+                self.after_cancel(self._face_job)
+            except (tk.TclError, ValueError):
+                pass
+            self._face_job = None
+
+    def _face_current(self):
+        """Face pair to paint: the in-flight blend, or the state's own face.
+
+        Only widgets that implement ``_face()`` blend their fill colour. The
+        controls without one (Dropdown, Stepper, Segmented, Toggle, ...) must
+        not raise here -- doing so aborted ``_st_press``/``_st_release`` before
+        ``_activate()`` and made every such control silently unclickable.
+        """
+        if self._face_shown is not None:
+            return self._face_shown
+        face = getattr(self, "_face", None)
+        return face() if callable(face) else None
+
+    def _animate_face(self, start):
+        """Fade the face from the pre-change pair ``start`` to the new target.
+
+        Only widgets that implement ``_face()`` blend; the others (Dropdown,
+        Stepper, Toggle, ...) redraw immediately, exactly as before.
+        """
+        target = self._face() if hasattr(self, "_face") else None
+        if target is None or not _motion_active(self) or not self.winfo_exists():
+            self._face_shown = None
+            self._draw()
+            return
+        if self._face_job is not None:
+            try:
+                self.after_cancel(self._face_job)
+            except (tk.TclError, ValueError):
+                pass
+            self._face_job = None
+        if start is None:
+            start = target
+        if start == target:
+            self._face_shown = None
+            self._draw()
+            return
+        steps = max(3, self.FACE_FADE_MS // 16)
+
+        def frame(step=0):
+            self._face_job = None
+            if not self.winfo_exists():
+                self._face_shown = None
+                return
+            t = step / steps
+            if t >= 1:
+                self._face_shown = None
+                self._draw()
+                return
+            eased = t * t * (3 - 2 * t)
+            self._face_shown = tuple(T.mix(a, b, eased) for a, b in zip(start, target))
+            self._draw()
+            self._face_job = self.after(16, lambda: frame(step + 1))
+
+        frame(0)
+
     def _st_enter(self, _event):
+        start = self._face_current()
         self._hover = True
-        self._draw()
+        self._animate_face(start)
 
     def _st_leave(self, _event):
+        start = self._face_current()
         self._hover = False
         self._pressed = False
-        self._draw()
+        self._animate_face(start)
 
     def _st_press(self, _event):
         if self._disabled:
@@ -115,25 +205,29 @@ class Interactive:
             self.focus_set()
         except (tk.TclError, AttributeError):
             pass
+        start = self._face_current()
         self._pressed = True
-        self._draw()
+        self._animate_face(start)
 
     def _st_release(self, _event):
         if self._disabled:
             return
+        start = self._face_current()
         was_pressed = self._pressed
         self._pressed = False
-        self._draw()
+        self._animate_face(start)
         if was_pressed:
             self._activate()
 
     def _st_focus_in(self, _event):
+        start = self._face_current()
         self._focused = True
-        self._draw()
+        self._animate_face(start)
 
     def _st_focus_out(self, _event):
+        start = self._face_current()
         self._focused = False
-        self._draw()
+        self._animate_face(start)
 
     def _activate(self):
         if self._command and not self._disabled:
@@ -366,7 +460,7 @@ class SoftButton(tk.Canvas, Interactive):
         r = T.px(T.RADIUS_CONTROL)
         g = T.px(T.FOCUS_RING)
         self._glow_ring(cv, g, g, w - g, h - g, r)
-        fill, ink = self._face()
+        fill, ink = self._face_current()
         round_rect(cv, g, g, w - g, h - g, r, fill=fill)
         if self._variant != "primary":
             round_rect(
@@ -449,7 +543,7 @@ class CircleIconButton(tk.Button, Interactive):
     def refresh(self):
         if not self.winfo_exists():
             return
-        fill, ink = self._face()
+        fill, ink = self._face_current()
         image = self._make_image(fill, ink)
         self._images["current"] = image
         self.configure(
@@ -716,7 +810,7 @@ class Stepper(tk.Canvas, Interactive):
 
     def _on_wheel(self, event):
         if self._disabled or not self.wheel_guard():
-            return "break"
+            return  # Let the page scroll when wheel editing is disabled.
         try:
             value = int(self._var.get())
         except ValueError:
@@ -916,11 +1010,28 @@ class Segmented(tk.Canvas, Interactive):
             ink = (
                 T.DISABLED_INK if self._disabled else (T.PRIMARY if selected else T.TEXT_SECONDARY)
             )
+            # A segmented control can be squeezed into a narrow grid cell. Fit
+            # the label to its segment instead of letting neighbours collide.
+            available = max(1, seg_w - 2 * T.px(4))
+            font_spec = T.TYPE_BODY if selected else T.TYPE_CAPTION
+
+            def measured_width(text, spec):
+                return int(self.tk.call("font", "measure", spec, text))
+
+            if measured_width(label, font_spec) > available:
+                font_spec = T.TYPE_CAPTION
+            if measured_width(label, font_spec) > available:
+                clipped = ""
+                for char in label:
+                    if measured_width(clipped + char + "…", font_spec) > available:
+                        break
+                    clipped += char
+                label = clipped.rstrip() + "…"
             self.create_text(
                 (x1 + x2) / 2,
                 h / 2,
                 text=label,
-                font=T.TYPE_BODY if selected else T.TYPE_CAPTION,
+                font=font_spec,
                 fill=ink,
             )
 
@@ -1195,7 +1306,7 @@ class NavItem(tk.Frame, Interactive):
         g = T.px(T.FOCUS_RING)
         r = T.px(T.RADIUS_CHIP)
         self._glow_ring(cv, g, g, w - g, h - g, r)
-        fill, ink = self._face()
+        fill, ink = self._face_current()
         round_rect(cv, g, g, w - g, h - g, r, fill=fill)
         if self._selected:
             bar = T.px(T.NAV_INDICATOR)
@@ -1276,7 +1387,7 @@ class SubjectCard(tk.Frame, Interactive):
         g = T.px(T.FOCUS_RING)
         r = T.px(T.RADIUS_CARD)
         self._glow_ring(cv, g, g, w - g, h - g, r)
-        fill, edge = self._face()
+        fill, edge = self._face_current()
         round_rect(cv, g, g, w - g, h - g, r, fill=fill)
         round_rect(
             cv,
