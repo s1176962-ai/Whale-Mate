@@ -120,8 +120,13 @@ class BattleSkinResolutionTests(unittest.TestCase):
             chosen = prefs.selected(root, "battle", "普通级")
             effective = skins.resolve_battle_skin(root, "普通级", chosen)
             self.assertEqual(effective, "custom")
-            self.assertEqual(skins.portrait_path(root, effective, "normal"), custom)
-            self.assertEqual(skins.portrait_path(root, effective, "wrong"), default)
+            # Windows CI may expose TEMP using an 8.3 alias (RUNNER~1),
+            # while asset_path() resolves it to the long directory name.
+            # Verify file identity for both the custom image and fallback.
+            for state, expected in (("normal", custom), ("wrong", default)):
+                with self.subTest(state=state):
+                    actual = skins.portrait_path(root, effective, state)
+                    self.assertTrue(actual is not None and actual.samefile(expected))
             self.assertEqual(skins.resolve_battle_skin(root, "地狱", "unknown"), "default")
 
     def test_legacy_registry_remains_usable_without_generic_registry(self):
